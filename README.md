@@ -1,6 +1,6 @@
-# Document Scanner
+# document-scanner-native-ios-app
 
-Document Scanner is a local first iOS app for capturing paper documents, converting them into PDFs, and managing them in a clean SwiftUI interface. The project is open source and built for a focused scanning workflow without accounts, cloud dependencies, or unnecessary complexity.
+document-scanner-native-ios-app is a local first iOS app for capturing paper documents, converting them into PDFs, and managing them in a clean SwiftUI interface. The project is open source and built for a focused scanning workflow without accounts, cloud dependencies, or unnecessary complexity.
 
 ## Preview
 
@@ -29,7 +29,7 @@ Document Scanner is a local first iOS app for capturing paper documents, convert
 ## Project Structure
 
 ```text
-document-scaner/
+document-scanner-native-ios-app/
 ├── document-scaner/
 │   ├── Features/
 │   ├── Models/
@@ -51,8 +51,8 @@ document-scaner/
 ### Installation
 
 ```bash
-git clone https://github.com/youssefsz/document-scaner.git
-cd document-scaner
+git clone https://github.com/youssefsz/document-scanner-native-ios-app.git
+cd document-scanner-native-ios-app
 open document-scaner.xcodeproj
 ```
 
