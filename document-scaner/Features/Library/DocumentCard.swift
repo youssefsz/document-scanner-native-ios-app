@@ -12,26 +12,34 @@ struct DocumentCard: View {
     let document: ScannedDocument
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             DocumentThumbnail(url: document.previewURL)
                 .frame(height: 180)
+                .frame(maxWidth: .infinity)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(document.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44, alignment: .top)
 
                 Text(document.createdAt.formatted(date: .numeric, time: .omitted))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
                 Text("\(document.pageCount) page\(document.pageCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 2)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
@@ -39,27 +47,21 @@ private struct DocumentThumbnail: View {
     let url: URL
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.regularMaterial)
-
+        Group {
             if let image = UIImage(contentsOfFile: url.path) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             } else {
-                Image(systemName: "doc.text.image")
-                    .font(.system(size: 42))
-                    .foregroundStyle(.secondary)
+                ZStack {
+                    Color.clear
+                    Image(systemName: "doc.text.image")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
     }
 }
 

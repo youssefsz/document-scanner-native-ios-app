@@ -15,8 +15,8 @@ struct LibraryView: View {
     @State private var isScannerPresented = false
 
     private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.flexible(), spacing: 20, alignment: .top),
+        GridItem(.flexible(), spacing: 20, alignment: .top)
     ]
 
     var body: some View {
@@ -28,7 +28,7 @@ struct LibraryView: View {
                         .padding(.top, 80)
                         .padding(.horizontal, 24)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 20) {
+                    LazyVGrid(columns: columns, spacing: 24) {
                         ForEach(displayedDocuments) { document in
                             NavigationLink {
                                 DocumentDetailView(document: document)
@@ -38,13 +38,14 @@ struct LibraryView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 24)
                     .padding(.bottom, 140)
                 }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Documents")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -111,6 +112,7 @@ struct LibraryView: View {
                 .padding(.vertical, 16)
         }
         .buttonStyle(.glassProminent)
+        .padding(.horizontal, 20)
         .padding(.bottom, 24)
     }
 

@@ -9,10 +9,18 @@ import Foundation
 import UIKit
 
 enum DocumentStorage {
-    nonisolated static let rootDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("DocumentLibrary", isDirectory: true)
-    nonisolated static let filesDirectory = rootDirectory.appendingPathComponent("Files", isDirectory: true)
-    nonisolated static let metadataURL = rootDirectory.appendingPathComponent("library.json", isDirectory: false)
+    nonisolated static var rootDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DocumentLibrary", isDirectory: true)
+    }
+
+    nonisolated static var filesDirectory: URL {
+        rootDirectory.appendingPathComponent("Files", isDirectory: true)
+    }
+
+    nonisolated static var metadataURL: URL {
+        rootDirectory.appendingPathComponent("library.json", isDirectory: false)
+    }
 }
 
 enum DocumentStoreError: LocalizedError {
