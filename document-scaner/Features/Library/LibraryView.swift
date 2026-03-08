@@ -13,6 +13,7 @@ struct LibraryView: View {
 
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @State private var isScannerPresented = false
+    @State private var selectedDocument: ScannedDocument?
 
     private let gridSpacing: CGFloat = 16
     private let horizontalPadding: CGFloat = 16
@@ -35,8 +36,8 @@ struct LibraryView: View {
                             ForEach(Array(documentRows.enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .top, spacing: gridSpacing) {
                                     ForEach(row) { document in
-                                        NavigationLink {
-                                            DocumentDetailView(document: document)
+                                        Button {
+                                            selectedDocument = document
                                         } label: {
                                             DocumentCard(document: document)
                                                 .frame(width: cardWidth, height: DocumentCardLayout.totalCardHeight)
@@ -94,6 +95,10 @@ struct LibraryView: View {
                 }
             )
             .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $selectedDocument) { document in
+            DocumentDetailView(document: document)
+                .environmentObject(library)
         }
         .alert("Something Went Wrong", isPresented: activeErrorBinding) {
             Button("OK", role: .cancel) {
