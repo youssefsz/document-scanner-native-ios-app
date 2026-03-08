@@ -99,7 +99,7 @@ struct SettingsView: View {
         .onAppear {
             stagedUseDarkMode = useDarkMode
         }
-        .onChange(of: useDarkMode) { _, newValue in
+        .onChange(of: useDarkMode) { newValue in
             guard stagedUseDarkMode != newValue else { return }
             stagedUseDarkMode = newValue
         }
@@ -179,7 +179,15 @@ private struct AboutAppView: View {
                     Text("Creator")
                         .font(.headline)
 
-                    LabeledContent("Developed by", value: AppMetadata.creatorName)
+                    HStack {
+                        Text("Developed by")
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text(AppMetadata.creatorName)
+                            .multilineTextAlignment(.trailing)
+                    }
 
                     Link(destination: AppMetadata.portfolioURL) {
                         Label(AppMetadata.portfolioDisplayName, systemImage: "globe")

@@ -8,11 +8,11 @@
 import Foundation
 
 enum DocumentTitleFormatter {
-    static func `default`(for date: Date) -> String {
+    nonisolated static func `default`(for date: Date) -> String {
         "Scan \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 
-    static func sanitized(_ proposedTitle: String?, fallbackDate: Date) -> String {
+    nonisolated static func sanitized(_ proposedTitle: String?, fallbackDate: Date) -> String {
         let trimmedTitle = proposedTitle?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 

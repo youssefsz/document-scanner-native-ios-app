@@ -23,30 +23,39 @@ struct DocumentTitleEditorSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 24) {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-
-                    Text(message)
-                        .font(.subheadline)
+                    Text("Document Name")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                }
+                        .textCase(.uppercase)
 
-                TextField("Document name", text: $documentTitle)
-                    .textInputAutocapitalization(.words)
-                    .submitLabel(.done)
-                    .focused($isTitleFieldFocused)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(Color(uiColor: .separator).opacity(0.18), lineWidth: 1)
-                    }
-                    .onSubmit(onSave)
+                    TextField("Document name", text: $documentTitle)
+                        .font(.body.weight(.medium))
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                        .focused($isTitleFieldFocused)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color(.systemBackground))
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(
+                                    isTitleFieldFocused
+                                    ? Color.accentColor.opacity(0.85)
+                                    : Color(uiColor: .separator).opacity(0.3),
+                                    lineWidth: isTitleFieldFocused ? 2 : 1
+                                )
+                        }
+                        .shadow(color: Color.black.opacity(0.06), radius: 12, y: 4)
+                        .onSubmit(onSave)
+                }
 
                 Text("You can change the title again later from the document preview.")
                     .font(.footnote)
@@ -68,12 +77,14 @@ struct DocumentTitleEditorSheet: View {
                     .font(.headline)
                     .padding(.vertical, 16)
                 }
-                .buttonStyle(.glassProminent)
+                .appProminentButtonStyle()
                 .disabled(trimmedTitle.isEmpty || isSaving)
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemGroupedBackground))
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(cancelButtonTitle, action: onCancel)
@@ -84,12 +95,19 @@ struct DocumentTitleEditorSheet: View {
         .interactiveDismissDisabled(isSaving || !allowsInteractiveDismiss)
         .presentationDetents([.height(320)])
         .presentationDragIndicator(.visible)
-        .onAppear {
-            isTitleFieldFocused = true
+        .task {
+            await focusTitleField()
         }
     }
 
     private var trimmedTitle: String {
         documentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @MainActor
+    private func focusTitleField() async {
+        guard !isSaving else { return }
+        try? await Task.sleep(for: .milliseconds(250))
+        isTitleFieldFocused = true
     }
 }

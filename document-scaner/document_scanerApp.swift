@@ -19,7 +19,7 @@ struct document_scanerApp: App {
                 .onAppear {
                     AppThemeController.apply(useDarkMode: useDarkMode, animated: false)
                 }
-                .onChange(of: useDarkMode) { _, newValue in
+                .onChange(of: useDarkMode) { newValue in
                     AppThemeController.apply(useDarkMode: newValue, animated: true)
                 }
         }

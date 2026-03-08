@@ -76,20 +76,20 @@ struct LibraryView: View {
                 .navigationBarTitleDisplayMode(isSelectionMode ? .inline : .large)
                 .toolbar {
                     if isSelectionMode {
-                        ToolbarItem(placement: .topBarLeading) {
+                        ToolbarItem(placement: .navigationBarLeading) {
                             Button("Cancel") {
                                 endSelectionMode()
                             }
                         }
 
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             Button(allDisplayedSelected ? "Deselect All" : "Select All") {
                                 toggleSelectAll()
                             }
                             .disabled(displayedDocuments.isEmpty || isDeletingSelection)
                         }
                     } else {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             NavigationLink {
                                 SettingsView()
                             } label: {
@@ -113,7 +113,7 @@ struct LibraryView: View {
         .task {
             await library.loadIfNeeded()
         }
-        .onChange(of: library.documents) { _, documents in
+        .onChange(of: library.documents) { documents in
             pruneSelection(using: Set(documents.map(\.id)))
         }
         .sheet(isPresented: $isScannerPresented) {
@@ -168,10 +168,10 @@ struct LibraryView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView(
-            "No Documents Yet",
+        AppUnavailableStateView(
+            title: "No Documents Yet",
             systemImage: "doc.viewfinder",
-            description: Text("Scan paper documents and the app will save them as PDFs in a local library.")
+            description: "Scan paper documents and the app will save them as PDFs in a local library."
         )
     }
 
@@ -184,7 +184,7 @@ struct LibraryView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
         }
-        .buttonStyle(.glassProminent)
+        .appProminentButtonStyle()
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -492,8 +492,7 @@ private struct LibrarySelectionBar: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.glassProminent)
-            .tint(.red)
+            .appProminentButtonStyle(color: .red)
             .disabled(selectionCount == 0 || isDeleting)
         }
         .padding(18)
