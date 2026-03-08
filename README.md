@@ -67,7 +67,7 @@ Note: the simulator can build and preview the interface, but document capture re
 
 ## Privacy
 
-This project follows a local first approach. Scanned PDFs, preview images, and metadata are stored on the device. In the current MVP, the app does not require user accounts or upload documents to a backend service.
+This project follows a local first approach. Scanned PDFs, preview images, and metadata are stored on the device. The app does not require user accounts or upload documents to a backend service.
 
 ## Open Source
 
