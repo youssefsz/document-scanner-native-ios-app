@@ -11,6 +11,9 @@ enum AppPreferenceKey {
     static let documentSortOrder = "documentSortOrder"
     static let confirmBeforeDelete = "confirmBeforeDelete"
     static let useDarkMode = "useDarkMode"
+    static let hasCreatedFirstDocument = "hasCreatedFirstDocument"
+    static let pendingReviewDocumentID = "pendingReviewDocumentID"
+    static let hasRequestedNativeReview = "hasRequestedNativeReview"
 }
 
 enum DocumentSortOrder: String, CaseIterable, Identifiable {

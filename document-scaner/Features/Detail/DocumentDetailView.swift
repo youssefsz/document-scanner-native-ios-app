@@ -7,13 +7,16 @@
 
 import AVFoundation
 import PDFKit
+import StoreKit
 import SwiftUI
+import UIKit
 
 struct DocumentDetailView: View {
     let document: ScannedDocument
 
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestReview) private var requestReview
     @EnvironmentObject private var library: DocumentLibrary
 
     @State private var currentPageID: Int?
@@ -48,6 +51,7 @@ struct DocumentDetailView: View {
         .preferredColorScheme(.dark)
         .task(id: document.id) {
             loadPages()
+            await requestNativeReviewIfNeeded()
         }
         .confirmationDialog("Delete this document?", isPresented: $isShowingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Document", role: .destructive) {
@@ -357,6 +361,16 @@ struct DocumentDetailView: View {
         } else if zoomedPageID == pageID {
             zoomedPageID = nil
         }
+    }
+
+    private func requestNativeReviewIfNeeded() async {
+        guard !renderedPages.isEmpty else { return }
+        guard AppReviewCoordinator.consumePendingReviewRequest(for: currentDocument) else { return }
+
+        try? await Task.sleep(for: .milliseconds(700))
+        guard !Task.isCancelled else { return }
+
+        requestReview()
     }
 }
 

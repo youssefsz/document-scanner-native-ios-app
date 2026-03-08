@@ -13,6 +13,7 @@ struct LibraryView: View {
     @EnvironmentObject private var library: DocumentLibrary
 
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
+    @AppStorage(AppPreferenceKey.hasCreatedFirstDocument) private var hasCreatedFirstDocument = false
     @State private var isScannerPresented = false
     @State private var isSavingPendingScan = false
     @State private var isDeletingSelection = false
@@ -114,6 +115,10 @@ struct LibraryView: View {
             await library.loadIfNeeded()
         }
         .onChange(of: library.documents) { documents in
+            if !hasCreatedFirstDocument {
+                AppReviewCoordinator.registerExistingLibraryIfNeeded(documents)
+                hasCreatedFirstDocument = UserDefaults.standard.bool(forKey: AppPreferenceKey.hasCreatedFirstDocument)
+            }
             pruneSelection(using: Set(documents.map(\.id)))
         }
         .sheet(isPresented: $isScannerPresented) {
@@ -255,6 +260,7 @@ struct LibraryView: View {
     private func savePendingScan() {
         let pages = pendingScanPages
         let title = pendingScanTitle
+        let existingDocumentCount = library.documents.count
 
         guard !pages.isEmpty, !isSavingPendingScan else { return }
 
@@ -265,6 +271,12 @@ struct LibraryView: View {
             isSavingPendingScan = false
 
             guard library.activeError == nil else { return }
+
+            AppReviewCoordinator.armFirstDocumentReviewIfNeeded(
+                existingDocumentCount: existingDocumentCount,
+                updatedDocuments: library.documents
+            )
+            hasCreatedFirstDocument = UserDefaults.standard.bool(forKey: AppPreferenceKey.hasCreatedFirstDocument)
 
             clearPendingScan()
             isNamingPendingScan = false

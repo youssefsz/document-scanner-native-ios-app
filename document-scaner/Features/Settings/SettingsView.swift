@@ -57,6 +57,15 @@ struct SettingsView: View {
                     AboutAppView()
                 }
 
+                if let appStoreReviewURL = AppMetadata.appStoreReviewURL {
+                    Link(destination: appStoreReviewURL) {
+                        Label("Rate on the App Store", systemImage: "star.bubble")
+                    }
+                } else {
+                    Label("Rate on the App Store", systemImage: "star.bubble")
+                        .foregroundStyle(.secondary)
+                }
+
                 Link(destination: AppMetadata.supportEmailURL) {
                     Label("Email Support", systemImage: "envelope")
                 }
@@ -78,7 +87,11 @@ struct SettingsView: View {
             } header: {
                 Text("About & Legal")
             } footer: {
-                Text("Support opens your email app with your app version and device details included.")
+                if AppMetadata.appStoreReviewURL == nil {
+                    Text("Add the app's numeric App Store ID to the `AppStoreID` Info.plist value to enable the review page button. Support opens your email app with your app version and device details included.")
+                } else {
+                    Text("Support opens your email app with your app version and device details included.")
+                }
             }
 
             Section {
