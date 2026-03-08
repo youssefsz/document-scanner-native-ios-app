@@ -73,7 +73,7 @@ This project follows a local first approach. Scanned PDFs, preview images, and m
 
 This project is open source and maintained by Youssef Dhibi.
 
-- Portfolio: [youssef.tn](https://youssef.tn)
+- Portfolio: [dhibi.tn](https://dhibi.tn)
 
 ## License
 
