@@ -101,20 +101,28 @@ actor DocumentStore {
     }
 
     func delete(_ document: ScannedDocument) throws -> [ScannedDocument] {
+        try delete([document])
+    }
+
+    func delete(_ documents: [ScannedDocument]) throws -> [ScannedDocument] {
         try prepareStorage()
 
-        let pdfURL = document.pdfURL
-        let previewURL = document.previewURL
+        let identifiers = Set(documents.map(\.id))
 
-        if fileManager.fileExists(atPath: pdfURL.path) {
-            try fileManager.removeItem(at: pdfURL)
+        for document in documents {
+            let pdfURL = document.pdfURL
+            let previewURL = document.previewURL
+
+            if fileManager.fileExists(atPath: pdfURL.path) {
+                try fileManager.removeItem(at: pdfURL)
+            }
+
+            if fileManager.fileExists(atPath: previewURL.path) {
+                try fileManager.removeItem(at: previewURL)
+            }
         }
 
-        if fileManager.fileExists(atPath: previewURL.path) {
-            try fileManager.removeItem(at: previewURL)
-        }
-
-        let updatedDocuments = try loadDocuments().filter { $0.id != document.id }
+        let updatedDocuments = try loadDocuments().filter { !identifiers.contains($0.id) }
         try persist(updatedDocuments)
         return updatedDocuments
     }

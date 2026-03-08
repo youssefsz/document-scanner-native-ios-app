@@ -17,6 +17,8 @@ enum DocumentCardLayout {
 
 struct DocumentCard: View {
     let document: ScannedDocument
+    var isSelectionMode = false
+    var isSelected = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -51,16 +53,86 @@ struct DocumentCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: DocumentCardLayout.totalCardHeight, maxHeight: DocumentCardLayout.totalCardHeight, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+            cardBackground
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
+        .overlay { cardBorder }
+        .overlay(alignment: .topTrailing) { selectionBadge }
         .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous))
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .scaleEffect(cardScale)
+        .shadow(color: shadowColor, radius: shadowRadius, y: shadowYOffset)
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: backgroundColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+    }
+
+    private var cardBorder: some View {
+        RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
+            .strokeBorder(borderColor, lineWidth: isSelected ? 2 : 1)
+    }
+
+    @ViewBuilder
+    private var selectionBadge: some View {
+        if isSelectionMode {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.85))
+                .padding(14)
+                .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    private var backgroundColors: [Color] {
+        if isSelected {
+            [
+                Color.accentColor.opacity(0.18),
+                Color(.secondarySystemGroupedBackground)
+            ]
+        } else if isSelectionMode {
+            [
+                Color(.secondarySystemGroupedBackground),
+                Color(.tertiarySystemGroupedBackground)
+            ]
+        } else {
+            [
+                Color(.secondarySystemGroupedBackground),
+                Color(.secondarySystemGroupedBackground)
+            ]
+        }
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.9)
+        }
+
+        return isSelectionMode ? Color(uiColor: .quaternaryLabel).opacity(0.3) : Color(uiColor: .quaternaryLabel).opacity(0.22)
+    }
+
+    private var cardScale: CGFloat {
+        guard isSelectionMode else { return 1 }
+        return isSelected ? 1 : 0.985
+    }
+
+    private var shadowColor: Color {
+        isSelected ? Color.accentColor.opacity(0.14) : Color.black.opacity(isSelectionMode ? 0.06 : 0.08)
+    }
+
+    private var shadowRadius: CGFloat {
+        isSelected ? 18 : 12
+    }
+
+    private var shadowYOffset: CGFloat {
+        isSelected ? 10 : 6
     }
 }
 

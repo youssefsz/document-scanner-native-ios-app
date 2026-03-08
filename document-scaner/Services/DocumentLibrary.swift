@@ -34,6 +34,7 @@ final class DocumentLibrary: ObservableObject {
         do {
             documents = try await store.loadDocuments()
             hasLoaded = true
+            activeError = nil
         } catch {
             activeError = LibraryError(message: error.localizedDescription)
         }
@@ -46,17 +47,25 @@ final class DocumentLibrary: ObservableObject {
         do {
             documents = try await store.saveScan(pages: pages)
             hasLoaded = true
+            activeError = nil
         } catch {
             activeError = LibraryError(message: error.localizedDescription)
         }
     }
 
     func delete(_ document: ScannedDocument) async {
+        await delete([document])
+    }
+
+    func delete(_ documents: [ScannedDocument]) async {
+        guard !documents.isEmpty else { return }
+
         isLoading = true
         defer { isLoading = false }
 
         do {
-            documents = try await store.delete(document)
+            self.documents = try await store.delete(documents)
+            activeError = nil
         } catch {
             activeError = LibraryError(message: error.localizedDescription)
         }
