@@ -14,9 +14,13 @@ struct LibraryView: View {
 
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @State private var isScannerPresented = false
+    @State private var isSavingPendingScan = false
     @State private var isDeletingSelection = false
+    @State private var isNamingPendingScan = false
     @State private var isSelectionMode = false
     @State private var isShowingDeleteConfirmation = false
+    @State private var pendingScanPages: [UIImage] = []
+    @State private var pendingScanTitle = ""
     @State private var selectedDocument: ScannedDocument?
     @State private var selectedDocumentIDs: Set<ScannedDocument.ID> = []
 
@@ -116,9 +120,7 @@ struct LibraryView: View {
             DocumentScannerSheet(
                 onComplete: { pages in
                     isScannerPresented = false
-                    Task {
-                        await library.importScan(pages: pages)
-                    }
+                    preparePendingScan(pages: pages)
                 },
                 onCancel: {
                     isScannerPresented = false
@@ -129,6 +131,19 @@ struct LibraryView: View {
                 }
             )
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $isNamingPendingScan) {
+            DocumentTitleEditorSheet(
+                title: "Name Document",
+                message: "Choose a title before saving this scan to your library.",
+                saveButtonTitle: "Save Document",
+                cancelButtonTitle: "Discard",
+                isSaving: isSavingPendingScan,
+                allowsInteractiveDismiss: false,
+                documentTitle: $pendingScanTitle,
+                onCancel: discardPendingScan,
+                onSave: savePendingScan
+            )
         }
         .fullScreenCover(item: $selectedDocument) { document in
             DocumentDetailView(document: document)
@@ -215,6 +230,51 @@ struct LibraryView: View {
         }
 
         isScannerPresented = true
+    }
+
+    private func preparePendingScan(pages: [UIImage]) {
+        guard !pages.isEmpty else {
+            library.activeError = LibraryError(message: DocumentStoreError.emptyScan.localizedDescription)
+            return
+        }
+
+        pendingScanPages = pages
+        pendingScanTitle = DocumentTitleFormatter.default(for: .now)
+
+        Task { @MainActor in
+            await Task.yield()
+            isNamingPendingScan = true
+        }
+    }
+
+    private func discardPendingScan() {
+        clearPendingScan()
+        isNamingPendingScan = false
+    }
+
+    private func savePendingScan() {
+        let pages = pendingScanPages
+        let title = pendingScanTitle
+
+        guard !pages.isEmpty, !isSavingPendingScan else { return }
+
+        isSavingPendingScan = true
+
+        Task {
+            await library.importScan(pages: pages, title: title)
+            isSavingPendingScan = false
+
+            guard library.activeError == nil else { return }
+
+            clearPendingScan()
+            isNamingPendingScan = false
+            Haptics.success()
+        }
+    }
+
+    private func clearPendingScan() {
+        pendingScanPages = []
+        pendingScanTitle = ""
     }
 
     private var activeErrorBinding: Binding<Bool> {

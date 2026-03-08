@@ -68,7 +68,7 @@ actor DocumentStore {
         return documents.sorted { $0.createdAt > $1.createdAt }
     }
 
-    func saveScan(pages: [UIImage]) throws -> [ScannedDocument] {
+    func saveScan(pages: [UIImage], title: String? = nil) throws -> [ScannedDocument] {
         guard let firstPage = pages.first else {
             throw DocumentStoreError.emptyScan
         }
@@ -88,7 +88,7 @@ actor DocumentStore {
 
         var documents = try loadDocuments()
         let document = ScannedDocument(
-            title: defaultTitle(for: timestamp),
+            title: DocumentTitleFormatter.sanitized(title, fallbackDate: timestamp),
             createdAt: timestamp,
             pageCount: pages.count,
             pdfFilename: pdfFilename,
@@ -96,6 +96,20 @@ actor DocumentStore {
         )
         documents.insert(document, at: 0)
 
+        try persist(documents)
+        return documents
+    }
+
+    func rename(_ document: ScannedDocument, title: String) throws -> [ScannedDocument] {
+        try prepareStorage()
+
+        var documents = try loadDocuments()
+
+        guard let index = documents.firstIndex(where: { $0.id == document.id }) else {
+            return documents
+        }
+
+        documents[index].title = DocumentTitleFormatter.sanitized(title, fallbackDate: documents[index].createdAt)
         try persist(documents)
         return documents
     }
@@ -135,10 +149,6 @@ actor DocumentStore {
     private func persist(_ documents: [ScannedDocument]) throws {
         let data = try encoder.encode(documents.sorted { $0.createdAt > $1.createdAt })
         try data.write(to: DocumentStorage.metadataURL, options: .atomic)
-    }
-
-    private func defaultTitle(for date: Date) -> String {
-        "Scan \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func makePreview(from image: UIImage) throws -> Data {

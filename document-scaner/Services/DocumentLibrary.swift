@@ -40,12 +40,25 @@ final class DocumentLibrary: ObservableObject {
         }
     }
 
-    func importScan(pages: [UIImage]) async {
+    func importScan(pages: [UIImage], title: String? = nil) async {
         isLoading = true
         defer { isLoading = false }
 
         do {
-            documents = try await store.saveScan(pages: pages)
+            documents = try await store.saveScan(pages: pages, title: title)
+            hasLoaded = true
+            activeError = nil
+        } catch {
+            activeError = LibraryError(message: error.localizedDescription)
+        }
+    }
+
+    func rename(_ document: ScannedDocument, title: String) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            documents = try await store.rename(document, title: title)
             hasLoaded = true
             activeError = nil
         } catch {

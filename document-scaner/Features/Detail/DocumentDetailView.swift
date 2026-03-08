@@ -20,11 +20,14 @@ struct DocumentDetailView: View {
     @State private var isDeleting = false
     @State private var isLoadingPreview = true
     @State private var isPreparingShare = false
+    @State private var isRenaming = false
     @State private var isShowingDeleteConfirmation = false
+    @State private var isShowingRenameSheet = false
     @State private var isShowingShareSheet = false
     @State private var previewErrorMessage: String?
     @State private var renderedPages: [DocumentPageSnapshot] = []
     @State private var shareItems: [Any] = []
+    @State private var stagedTitle = ""
     @State private var showsControls = true
     @State private var zoomedPageID: Int?
 
@@ -60,6 +63,20 @@ struct DocumentDetailView: View {
             isPreparingShare = false
         }) {
             ActivityShareSheet(activityItems: shareItems)
+        }
+        .sheet(isPresented: $isShowingRenameSheet) {
+            DocumentTitleEditorSheet(
+                title: "Edit Document Name",
+                message: "Update the title shown in your library and in this preview.",
+                saveButtonTitle: "Save Changes",
+                cancelButtonTitle: "Cancel",
+                isSaving: isRenaming,
+                documentTitle: $stagedTitle,
+                onCancel: {
+                    isShowingRenameSheet = false
+                },
+                onSave: saveRename
+            )
         }
     }
 
@@ -163,28 +180,23 @@ struct DocumentDetailView: View {
             }
 
             VStack(spacing: 4) {
-                Text(document.title)
+                Text(currentDocument.title)
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
 
-                Text(document.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(currentDocument.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
 
-            if renderedPages.isEmpty {
-                Color.clear
-                    .frame(width: 44, height: 44)
-            } else {
-                ViewerControlButton(
-                    systemImage: "square.and.arrow.up",
-                    isLoading: isPreparingShare,
-                    action: startShare
-                )
-                .disabled(isPreparingShare || isDeleting)
-            }
+            ViewerControlButton(
+                systemImage: "pencil",
+                isLoading: isRenaming,
+                action: startRename
+            )
+            .disabled(isDeleting || isPreparingShare || isRenaming)
         }
     }
 
@@ -203,6 +215,13 @@ struct DocumentDetailView: View {
             }
 
             HStack {
+                ViewerControlButton(
+                    systemImage: "square.and.arrow.up",
+                    isLoading: isPreparingShare,
+                    action: startShare
+                )
+                .disabled(renderedPages.isEmpty || isPreparingShare || isDeleting || isRenaming)
+
                 Spacer()
 
                 ViewerControlButton(
@@ -216,7 +235,7 @@ struct DocumentDetailView: View {
                         deleteDocument()
                     }
                 }
-                .disabled(isDeleting || isPreparingShare)
+                .disabled(isDeleting || isPreparingShare || isRenaming)
             }
         }
     }
@@ -247,6 +266,10 @@ struct DocumentDetailView: View {
         return min(max(currentPageID + 1, 1), renderedPages.count)
     }
 
+    private var currentDocument: ScannedDocument {
+        library.documents.first(where: { $0.id == document.id }) ?? document
+    }
+
     private func toggleControls() {
         withAnimation(.easeInOut(duration: 0.2)) {
             showsControls.toggle()
@@ -257,25 +280,51 @@ struct DocumentDetailView: View {
         Task {
             guard !isDeleting else { return }
             isDeleting = true
-            await library.delete(document)
+            await library.delete(currentDocument)
             isDeleting = false
 
-            if !library.documents.contains(document) {
+            if !library.documents.contains(where: { $0.id == document.id }) {
                 dismiss()
             }
         }
     }
 
     private func startShare() {
-        guard !isPreparingShare, !isDeleting else { return }
+        guard !isPreparingShare, !isDeleting, !isRenaming else { return }
 
         isPreparingShare = true
 
         Task { @MainActor in
             await Task.yield()
-            shareItems = [document.pdfURL]
+            shareItems = [currentDocument.pdfURL]
             isShowingShareSheet = true
             isPreparingShare = false
+        }
+    }
+
+    private func startRename() {
+        guard !isDeleting, !isPreparingShare, !isRenaming else { return }
+
+        stagedTitle = currentDocument.title
+        isShowingRenameSheet = true
+    }
+
+    private func saveRename() {
+        let title = stagedTitle
+        let documentToRename = currentDocument
+
+        guard !isRenaming else { return }
+
+        isRenaming = true
+
+        Task {
+            await library.rename(documentToRename, title: title)
+            isRenaming = false
+
+            guard library.activeError == nil else { return }
+
+            stagedTitle = self.currentDocument.title
+            isShowingRenameSheet = false
         }
     }
 
@@ -287,7 +336,7 @@ struct DocumentDetailView: View {
         showsControls = true
         zoomedPageID = nil
 
-        let url = document.pdfURL
+        let url = currentDocument.pdfURL
 
         guard FileManager.default.fileExists(atPath: url.path) else {
             previewErrorMessage = "The PDF file is missing from local storage."
