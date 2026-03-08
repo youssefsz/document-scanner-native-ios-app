@@ -23,7 +23,7 @@
                                     <constraint firstAttribute="height" constant="120" id="wpz-uG-VKt"/>
                                 </constraints>
                             </imageView>
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="DocScaner" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="9M2-sX-IiH">
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="DocScanner" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="9M2-sX-IiH">
                                 <rect key="frame" x="32" y="784" width="329" height="22"/>
                                 <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="18"/>
                                 <color key="textColor" systemColor="labelColor"/>
