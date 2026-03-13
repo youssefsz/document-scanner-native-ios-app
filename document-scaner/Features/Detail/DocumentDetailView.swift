@@ -15,6 +15,7 @@ struct DocumentDetailView: View {
     let document: ScannedDocument
 
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
+    @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @Environment(\.dismiss) private var dismiss
     @Environment(\.requestReview) private var requestReview
     @EnvironmentObject private var library: DocumentLibrary
@@ -25,14 +26,21 @@ struct DocumentDetailView: View {
     @State private var isPreparingShare = false
     @State private var isRenaming = false
     @State private var isShowingDeleteConfirmation = false
+    @State private var isShowingExportSheet = false
     @State private var isShowingRenameSheet = false
     @State private var isShowingShareSheet = false
+    @State private var exportPreviewErrors: [DocumentExportQuality: String] = [:]
+    @State private var exportPreviewLoadingQualities: Set<DocumentExportQuality> = []
+    @State private var pendingSharePresentation = false
+    @State private var preparedExports: [DocumentExportQuality: PreparedDocumentExport] = [:]
     @State private var previewErrorMessage: String?
     @State private var renderedPages: [DocumentPageSnapshot] = []
+    @State private var selectedExportQuality = DocumentExportQuality.high
     @State private var shareItems: [Any] = []
     @State private var stagedTitle = ""
     @State private var showsControls = true
     @State private var zoomedPageID: Int?
+    private static let exportService = DocumentExportService()
 
     var body: some View {
         ZStack {
@@ -62,9 +70,27 @@ struct DocumentDetailView: View {
         } message: {
             Text("This removes the saved PDF and preview from local storage.")
         }
+        .sheet(isPresented: $isShowingExportSheet, onDismiss: presentPreparedShareIfNeeded) {
+            DocumentExportSheet(
+                selectedQuality: $selectedExportQuality,
+                originalFileSize: DocumentFileSizeFormatter.string(for: currentDocument.pdfURL),
+                preparedExports: preparedExports,
+                loadingQualities: exportPreviewLoadingQualities,
+                isPreparingShare: isPreparingShare,
+                exportErrorMessage: selectedExportPreviewError,
+                onCancel: {
+                    isShowingExportSheet = false
+                },
+                onSelectionChange: ensurePreparedExport,
+                onShare: {
+                    prepareShare(using: selectedExportQuality)
+                }
+            )
+        }
         .sheet(isPresented: $isShowingShareSheet, onDismiss: {
             shareItems = []
             isPreparingShare = false
+            cleanupPreparedExports()
         }) {
             ActivityShareSheet(activityItems: shareItems)
         }
@@ -81,6 +107,10 @@ struct DocumentDetailView: View {
                 },
                 onSave: saveRename
             )
+        }
+        .onDisappear {
+            guard !isShowingShareSheet, !pendingSharePresentation else { return }
+            cleanupPreparedExports()
         }
     }
 
@@ -280,15 +310,8 @@ struct DocumentDetailView: View {
 
     private func startShare() {
         guard !isPreparingShare, !isDeleting, !isRenaming else { return }
-
-        isPreparingShare = true
-
-        Task { @MainActor in
-            await Task.yield()
-            shareItems = [currentDocument.pdfURL]
-            isShowingShareSheet = true
-            isPreparingShare = false
-        }
+        selectedExportQuality = preferredExportQuality
+        isShowingExportSheet = true
     }
 
     private func startRename() {
@@ -363,6 +386,87 @@ struct DocumentDetailView: View {
         }
     }
 
+    private var preferredExportQuality: DocumentExportQuality {
+        DocumentExportQuality(rawValue: defaultExportQuality) ?? .high
+    }
+
+    private var selectedPreparedExport: PreparedDocumentExport? {
+        preparedExports[selectedExportQuality]
+    }
+
+    private var isLoadingSelectedExport: Bool {
+        exportPreviewLoadingQualities.contains(selectedExportQuality)
+    }
+
+    private var selectedExportPreviewError: String? {
+        exportPreviewErrors[selectedExportQuality]
+    }
+
+    private func presentPreparedShareIfNeeded() {
+        if pendingSharePresentation {
+            pendingSharePresentation = false
+            isShowingShareSheet = true
+        } else {
+            cleanupPreparedExports()
+        }
+    }
+
+    private func ensurePreparedExport(for quality: DocumentExportQuality) {
+        guard preparedExports[quality] == nil else { return }
+        guard !exportPreviewLoadingQualities.contains(quality) else { return }
+
+        exportPreviewErrors[quality] = nil
+        exportPreviewLoadingQualities.insert(quality)
+        let documentToExport = currentDocument
+
+        Task {
+            do {
+                let preparedExport = try await Self.exportService.prepareExport(for: documentToExport, quality: quality)
+
+                _ = await MainActor.run {
+                    exportPreviewLoadingQualities.remove(quality)
+                    exportPreviewErrors[quality] = nil
+                    preparedExports[quality] = preparedExport
+                }
+            } catch is CancellationError {
+                _ = await MainActor.run {
+                    exportPreviewLoadingQualities.remove(quality)
+                }
+            } catch {
+                _ = await MainActor.run {
+                    exportPreviewLoadingQualities.remove(quality)
+                    exportPreviewErrors[quality] = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func prepareShare(using quality: DocumentExportQuality) {
+        guard !isPreparingShare else { return }
+        guard let preparedExport = preparedExports[quality] else {
+            ensurePreparedExport(for: quality)
+            return
+        }
+
+        isPreparingShare = true
+        defaultExportQuality = quality.rawValue
+        shareItems = [preparedExport.url]
+        pendingSharePresentation = true
+        isShowingExportSheet = false
+        isPreparingShare = false
+    }
+
+    private func cleanupPreparedExports() {
+        let documentToCleanup = currentDocument
+        preparedExports = [:]
+        exportPreviewErrors = [:]
+        exportPreviewLoadingQualities = []
+
+        Task {
+            await Self.exportService.removeTemporaryExports(for: documentToCleanup)
+        }
+    }
+
     private func requestNativeReviewIfNeeded() async {
         guard !renderedPages.isEmpty else { return }
         guard AppReviewCoordinator.consumePendingReviewRequest(for: currentDocument) else { return }
@@ -410,6 +514,135 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct DocumentExportSheet: View {
+    @Binding var selectedQuality: DocumentExportQuality
+    let originalFileSize: String?
+    let preparedExports: [DocumentExportQuality: PreparedDocumentExport]
+    let loadingQualities: Set<DocumentExportQuality>
+    let isPreparingShare: Bool
+    let exportErrorMessage: String?
+    let onCancel: () -> Void
+    let onSelectionChange: (DocumentExportQuality) -> Void
+    let onShare: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(DocumentExportQuality.allCases) { quality in
+                        Button {
+                            selectedQuality = quality
+                        } label: {
+                            ExportQualityRow(
+                                quality: quality,
+                                isSelected: selectedQuality == quality,
+                                sizeText: preparedExports[quality]?.formattedFileSize,
+                                isLoading: loadingQualities.contains(quality)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isPreparingShare)
+                    }
+                } header: {
+                    Text("Export Quality")
+                } footer: {
+                    Text("Smaller files are easier to email and upload. The original document saved in your library stays unchanged.")
+                }
+
+                Section {
+                    LabeledContent("Saved File Size", value: originalFileSize ?? "Unavailable")
+                } header: {
+                    Text("Current PDF")
+                } footer: {
+                    if let exportErrorMessage {
+                        Text(exportErrorMessage)
+                    }
+                }
+            }
+            .navigationTitle("Share PDF")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                        .disabled(isPreparingShare)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: onShare) {
+                        if isPreparingShare {
+                            ProgressView()
+                        } else {
+                            Text("Share")
+                        }
+                    }
+                    .disabled(isPreparingShare || isLoadingSelectedExport || selectedPreparedExport == nil)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .task {
+            onSelectionChange(selectedQuality)
+        }
+        .onChange(of: selectedQuality) { newValue in
+            onSelectionChange(newValue)
+        }
+    }
+
+    private var selectedPreparedExport: PreparedDocumentExport? {
+        preparedExports[selectedQuality]
+    }
+
+    private var isLoadingSelectedExport: Bool {
+        loadingQualities.contains(selectedQuality)
+    }
+}
+
+private struct ExportQualityRow: View {
+    let quality: DocumentExportQuality
+    let isSelected: Bool
+    let sizeText: String?
+    let isLoading: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(quality.title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(quality.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+
+                if isLoading {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+
+                        Text("Calculating...")
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                } else if let sizeText {
+                    Text(sizeText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
 }
 
 private struct DocumentPagePagerView: UIViewRepresentable {

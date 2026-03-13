@@ -9,6 +9,7 @@ import Foundation
 
 enum AppPreferenceKey {
     static let documentSortOrder = "documentSortOrder"
+    static let defaultExportQuality = "defaultExportQuality"
     static let confirmBeforeDelete = "confirmBeforeDelete"
     static let useDarkMode = "useDarkMode"
     static let hasCreatedFirstDocument = "hasCreatedFirstDocument"

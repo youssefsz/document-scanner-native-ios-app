@@ -10,6 +10,7 @@ import UIKit
 
 struct SettingsView: View {
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
+    @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @AppStorage(AppPreferenceKey.useDarkMode) private var useDarkMode = false
     @State private var stagedUseDarkMode = false
@@ -33,11 +34,17 @@ struct SettingsView: View {
                     }
                 }
 
+                Picker("PDF Export Quality", selection: $defaultExportQuality) {
+                    ForEach(DocumentExportQuality.allCases) { quality in
+                        Text(quality.title).tag(quality.rawValue)
+                    }
+                }
+
                 Toggle("Confirm Before Delete", isOn: $confirmBeforeDelete)
             } header: {
                 Text("Library")
             } footer: {
-                Text("These settings affect the way documents are displayed and how deletion is handled.")
+                Text("These settings affect the way documents are displayed, how PDFs are prepared for sharing, and how deletion is handled.")
             }
 
             Section {
