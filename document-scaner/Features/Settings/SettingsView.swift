@@ -171,7 +171,7 @@ private struct AboutAppView: View {
                     Text(AppMetadata.appName)
                         .font(.largeTitle.weight(.bold))
 
-                    Text("Scan paper documents into PDF files, keep them organized locally on your device, and share them only when you choose.")
+                    Text("Scan paper documents into PDF files, keep them organized locally on your device, and choose the export quality when you share them.")
                         .font(.body)
                         .foregroundStyle(.secondary)
 
@@ -188,7 +188,7 @@ private struct AboutAppView: View {
                     FeatureRow(icon: "document.viewfinder", title: "Document scanning", detail: "Capture one or more pages using Apple's native scanning interface.")
                     FeatureRow(icon: "doc.richtext", title: "PDF generation", detail: "Each scan is converted into a PDF file and saved inside the app's local storage.")
                     FeatureRow(icon: "externaldrive", title: "Local-first storage", detail: "Documents, preview images, and metadata stay on your device unless you share them.")
-                    FeatureRow(icon: "square.and.arrow.up", title: "Share when needed", detail: "Use the system share sheet to export a document to the destination you choose.")
+                    FeatureRow(icon: "square.and.arrow.up", title: "Smart sharing", detail: "Choose Low, Medium, High, or Very High export quality and review the shared file size before sending a document.")
                 }
                 .settingsCardStyle()
 

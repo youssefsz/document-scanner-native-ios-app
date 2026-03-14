@@ -14,8 +14,10 @@ document-scanner-native-ios-app is a local first iOS app for capturing paper doc
 - Convert multi page scans into PDF files automatically
 - Store PDFs and preview images locally on the device
 - Browse saved scans in a simple document library
-- Preview, share, and delete scanned documents
-- Control sort order, delete confirmation, and appearance preferences
+- Preview, share, rename, and delete scanned documents
+- Choose PDF export quality before sharing with Low, Medium, High, and Very High presets
+- See the expected shared file size before exporting a document
+- Control sort order, export quality, delete confirmation, and appearance preferences
 - Keep the experience local first with no account system or cloud sync
 
 ## Tech Stack
