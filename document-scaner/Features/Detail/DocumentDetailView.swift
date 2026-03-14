@@ -584,7 +584,9 @@ private struct DocumentExportSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task {
-            onSelectionChange(selectedQuality)
+            for quality in DocumentExportQuality.allCases {
+                onSelectionChange(quality)
+            }
         }
         .onChange(of: selectedQuality) { newValue in
             onSelectionChange(newValue)
