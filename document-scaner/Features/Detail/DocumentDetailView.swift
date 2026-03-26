@@ -2,7 +2,6 @@
 //  DocumentDetailView.swift
 //  document-scaner
 //
-//  Created by Codex on 7/3/2026.
 //
 
 import AVFoundation

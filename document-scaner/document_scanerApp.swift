@@ -16,12 +16,7 @@ struct document_scanerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(library)
-                .onAppear {
-                    AppThemeController.apply(useDarkMode: useDarkMode, animated: false)
-                }
-                .onChange(of: useDarkMode) { newValue in
-                    AppThemeController.apply(useDarkMode: newValue, animated: true)
-                }
+                .preferredColorScheme(useDarkMode ? .dark : .light)
         }
     }
 }

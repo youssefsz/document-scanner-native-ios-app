@@ -2,7 +2,6 @@
 //  AppReviewCoordinator.swift
 //  document-scaner
 //
-//  Created by Codex on 8/3/2026.
 //
 
 import Foundation

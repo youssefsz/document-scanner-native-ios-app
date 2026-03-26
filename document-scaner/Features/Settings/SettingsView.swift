@@ -2,7 +2,6 @@
 //  SettingsView.swift
 //  document-scaner
 //
-//  Created by Codex on 7/3/2026.
 //
 
 import SwiftUI
@@ -13,14 +12,12 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @AppStorage(AppPreferenceKey.useDarkMode) private var useDarkMode = false
-    @State private var stagedUseDarkMode = false
-    @State private var themeUpdateTask: Task<Void, Never>?
     @State private var didCopyAppDetails = false
 
     var body: some View {
         Form {
             Section {
-                Toggle("Dark Mode", isOn: darkModeBinding)
+                Toggle("Dark Mode", isOn: $useDarkMode)
             } header: {
                 Text("Appearance")
             } footer: {
@@ -125,41 +122,11 @@ struct SettingsView: View {
         } message: {
             Text("App details were copied to the clipboard.")
         }
-        .onAppear {
-            stagedUseDarkMode = useDarkMode
-        }
-        .onChange(of: useDarkMode) { newValue in
-            guard stagedUseDarkMode != newValue else { return }
-            stagedUseDarkMode = newValue
-        }
-        .onDisappear {
-            themeUpdateTask?.cancel()
-        }
-    }
-
-    private var darkModeBinding: Binding<Bool> {
-        Binding(
-            get: { stagedUseDarkMode },
-            set: { newValue in
-                stagedUseDarkMode = newValue
-                queueThemeUpdate(newValue)
-            }
-        )
     }
 
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
-    }
-
-    private func queueThemeUpdate(_ newValue: Bool) {
-        themeUpdateTask?.cancel()
-        themeUpdateTask = Task {
-            try? await Task.sleep(for: .milliseconds(180))
-
-            guard !Task.isCancelled else { return }
-            useDarkMode = newValue
-        }
     }
 }
 

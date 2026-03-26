@@ -2,7 +2,6 @@
 //  DocumentExportQuality.swift
 //  document-scaner
 //
-//  Created by Codex on 13/3/2026.
 //
 
 import Foundation
