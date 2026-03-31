@@ -25,12 +25,13 @@ actor OCRService {
         self.pageTimeout = pageTimeout
     }
 
-    func recognizeText(in raster: ScanPageRaster) async throws -> [RecognizedTextLine] {
+    func recognizeText(in raster: ScanPageRaster, pageRect: CGRect? = nil) async throws -> [RecognizedTextLine] {
         let configuration = OCRPreferences.currentRequestConfiguration()
+        let targetPageRect = pageRect ?? raster.pageRect
 
         return try await withThrowingTaskGroup(of: [RecognizedTextLine].self) { group in
             group.addTask {
-                try Self.performRecognition(in: raster, configuration: configuration)
+                try Self.performRecognition(in: raster, pageRect: targetPageRect, configuration: configuration)
             }
 
             group.addTask {
@@ -46,6 +47,7 @@ actor OCRService {
 
     private static func performRecognition(
         in raster: ScanPageRaster,
+        pageRect: CGRect,
         configuration: OCRRequestConfiguration
     ) throws -> [RecognizedTextLine] {
         try Task.checkCancellation()
@@ -65,7 +67,7 @@ actor OCRService {
         try handler.perform([request])
 
         let observations = request.results ?? []
-        let mapper = PDFCoordinateMapper(imageSize: raster.size, pageRect: raster.pageRect)
+        let mapper = PDFCoordinateMapper(imageSize: raster.size, pageRect: pageRect)
 
         let recognizedLines = observations.compactMap { observation -> RecognizedTextLine? in
             guard let candidate = observation.topCandidates(1).first else { return nil }

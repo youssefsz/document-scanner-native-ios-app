@@ -61,9 +61,12 @@ struct ScanPageRaster: @unchecked Sendable {
 struct ScanPageContent {
     let raster: ScanPageRaster
     let lines: [RecognizedTextLine]
+    let pageRect: CGRect
 
-    nonisolated var pageRect: CGRect {
-        raster.pageRect
+    nonisolated init(raster: ScanPageRaster, lines: [RecognizedTextLine], pageRect: CGRect? = nil) {
+        self.raster = raster
+        self.lines = lines
+        self.pageRect = pageRect ?? raster.pageRect
     }
 
     nonisolated var preferredSpans: [RecognizedTextSpan] {
@@ -79,7 +82,7 @@ struct ScanPageContent {
     }
 
     nonisolated var imageOnly: ScanPageContent {
-        ScanPageContent(raster: raster, lines: [])
+        ScanPageContent(raster: raster, lines: [], pageRect: pageRect)
     }
 }
 
@@ -92,6 +95,21 @@ enum ScanPageRasterizer {
         }
 
         return ScanPageRaster(image: normalizedImage, cgImage: cgImage)
+    }
+
+    nonisolated static func recompressedRaster(
+        from raster: ScanPageRaster,
+        compressionQuality: CGFloat
+    ) throws -> ScanPageRaster {
+        let clampedQuality = min(max(compressionQuality, 0.05), 1)
+
+        guard let data = raster.image.jpegData(compressionQuality: clampedQuality),
+              let image = UIImage(data: data),
+              let cgImage = image.cgImage else {
+            throw DocumentStoreError.pdfCreationFailed
+        }
+
+        return ScanPageRaster(image: image, cgImage: cgImage)
     }
 }
 

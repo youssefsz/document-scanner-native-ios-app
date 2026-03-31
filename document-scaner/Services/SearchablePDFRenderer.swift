@@ -92,12 +92,8 @@ struct SearchablePDFRenderer {
     }
 
     nonisolated private func drawBackground(_ raster: ScanPageRaster, in pageRect: CGRect, context: CGContext) {
-        context.saveGState()
-        context.translateBy(x: 0, y: pageRect.height)
-        context.scaleBy(x: 1, y: -1)
         context.interpolationQuality = .high
         context.draw(raster.cgImage, in: pageRect)
-        context.restoreGState()
     }
 
     nonisolated private func drawInvisibleText(for page: ScanPageContent, in context: CGContext) {
