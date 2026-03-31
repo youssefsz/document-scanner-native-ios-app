@@ -83,6 +83,10 @@ final class DocumentLibrary: ObservableObject {
         }
     }
 
+    func ensureSearchablePDFIfNeeded(for document: ScannedDocument) async -> Bool {
+        await store.ensureSearchablePDFIfNeeded(for: document)
+    }
+
     static let preview: DocumentLibrary = {
         let library = DocumentLibrary(store: DocumentStore())
         library.documents = [ScannedDocument.previewDocument]

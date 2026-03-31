@@ -44,8 +44,14 @@ enum DocumentExportError: LocalizedError {
 
 actor DocumentExportService {
     private let fileManager = FileManager.default
+    private let store: DocumentStore
+
+    init(store: DocumentStore = DocumentStore()) {
+        self.store = store
+    }
 
     func prepareExport(for document: ScannedDocument, quality: DocumentExportQuality) async throws -> PreparedDocumentExport {
+        _ = await store.ensureSearchablePDFIfNeeded(for: document)
         let sourceURL = document.pdfURL
 
         guard fileManager.fileExists(atPath: sourceURL.path) else {
@@ -84,91 +90,30 @@ actor DocumentExportService {
     }
 
     private func makePDFData(from document: PDFDocument, quality: DocumentExportQuality) async throws -> Data {
-        let pages = try await makeExportPages(from: document, quality: quality)
-        let fallbackBounds = CGRect(origin: .zero, size: CGSize(width: 612, height: 792))
-        let renderer = UIGraphicsPDFRenderer(bounds: fallbackBounds)
+        let temporaryURL = temporaryWorkingURL()
 
-        let data = renderer.pdfData { context in
-            for page in pages {
-                context.beginPage(withBounds: page.bounds, pageInfo: [:])
-                page.image.draw(in: page.bounds)
+        try fileManager.createDirectory(
+            at: temporaryURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        defer {
+            if fileManager.fileExists(atPath: temporaryURL.path) {
+                try? fileManager.removeItem(at: temporaryURL)
             }
         }
 
+        guard document.write(to: temporaryURL, withOptions: writeOptions(for: quality)) else {
+            throw DocumentExportError.exportCreationFailed
+        }
+
+        let data = try Data(contentsOf: temporaryURL)
         guard !data.isEmpty else {
             throw DocumentExportError.exportCreationFailed
         }
 
         return data
-    }
-
-    private func makeExportPages(from document: PDFDocument, quality: DocumentExportQuality) async throws -> [ExportPage] {
-        var pages: [ExportPage] = []
-        pages.reserveCapacity(document.pageCount)
-
-        for pageIndex in 0..<document.pageCount {
-            try Task.checkCancellation()
-
-            guard let page = document.page(at: pageIndex) else {
-                throw DocumentExportError.pageRenderFailed
-            }
-
-            let renderedImage = render(page: page, quality: quality)
-            let compressedImage = try compress(renderedImage, quality: quality)
-            let pageBounds = normalizedPageBounds(for: page, fallback: compressedImage.size)
-            pages.append(ExportPage(bounds: pageBounds, image: compressedImage))
-        }
-
-        guard !pages.isEmpty else {
-            throw DocumentExportError.exportCreationFailed
-        }
-
-        return pages
-    }
-
-    private func render(page: PDFPage, quality: DocumentExportQuality) -> UIImage {
-        let sourceBounds = page.bounds(for: .mediaBox)
-        let fallbackSize = CGSize(width: 1200, height: 1600)
-        let pageSize = sourceBounds.isEmpty ? fallbackSize : sourceBounds.size
-        let longestSide = max(pageSize.width, pageSize.height)
-        let scale = min(1, quality.maxPageDimension / max(longestSide, 1))
-        let renderSize = CGSize(
-            width: max(pageSize.width * scale, 1),
-            height: max(pageSize.height * scale, 1)
-        )
-        let format = UIGraphicsImageRendererFormat.default()
-        format.opaque = true
-        format.scale = 1
-
-        return UIGraphicsImageRenderer(size: renderSize, format: format).image { context in
-            UIColor.white.setFill()
-            context.fill(CGRect(origin: .zero, size: renderSize))
-
-            let cgContext = context.cgContext
-            cgContext.saveGState()
-            cgContext.translateBy(x: 0, y: renderSize.height)
-            cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: cgContext)
-            cgContext.restoreGState()
-        }
-    }
-
-    private func compress(_ image: UIImage, quality: DocumentExportQuality) throws -> UIImage {
-        guard let data = image.jpegData(compressionQuality: quality.jpegCompressionQuality),
-              let compressedImage = UIImage(data: data) else {
-            throw DocumentExportError.pageRenderFailed
-        }
-
-        return compressedImage
-    }
-
-    private func normalizedPageBounds(for page: PDFPage, fallback imageSize: CGSize) -> CGRect {
-        let pageBounds = page.bounds(for: .mediaBox)
-        guard !pageBounds.isEmpty else {
-            return CGRect(origin: .zero, size: imageSize)
-        }
-
-        return CGRect(origin: .zero, size: pageBounds.size)
     }
 
     private func temporaryExportURL(for document: ScannedDocument, quality: DocumentExportQuality) -> URL {
@@ -185,15 +130,36 @@ actor DocumentExportService {
         DocumentTitleFormatter.exportFilename(for: document.title, quality: quality)
     }
 
+    private func temporaryWorkingURL() -> URL {
+        temporaryExportsDirectory
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: false)
+            .appendingPathExtension("pdf")
+    }
+
+    private func writeOptions(for quality: DocumentExportQuality) -> [PDFDocumentWriteOption: Any] {
+        var options: [PDFDocumentWriteOption: Any] = [:]
+
+        if #available(iOS 16.4, *) {
+            switch quality {
+            case .veryHigh:
+                break
+            case .high:
+                options[.saveImagesAsJPEGOption] = true
+            case .medium:
+                options[.optimizeImagesForScreenOption] = true
+            case .low:
+                options[.saveImagesAsJPEGOption] = true
+                options[.optimizeImagesForScreenOption] = true
+            }
+        }
+
+        return options
+    }
+
     private func fileSizeBytes(for url: URL) throws -> Int64 {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         return Int64(values.fileSize ?? 0)
     }
-}
-
-private struct ExportPage {
-    let bounds: CGRect
-    let image: UIImage
 }
 
 enum DocumentFileSizeFormatter {

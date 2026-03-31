@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import PDFKit
 import UIKit
 
 enum DocumentStorage {
@@ -43,8 +44,13 @@ actor DocumentStore {
     private let fileManager = FileManager.default
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let ocrService: OCRService
+    private let searchablePDFRenderer: SearchablePDFRenderer
 
-    init() {
+    init(
+        ocrService: OCRService = OCRService(),
+        searchablePDFRenderer: SearchablePDFRenderer = SearchablePDFRenderer()
+    ) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -53,6 +59,8 @@ actor DocumentStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
+        self.ocrService = ocrService
+        self.searchablePDFRenderer = searchablePDFRenderer
     }
 
     func loadDocuments() throws -> [ScannedDocument] {
@@ -67,7 +75,7 @@ actor DocumentStore {
         return documents.sorted { $0.createdAt > $1.createdAt }
     }
 
-    func saveScan(pages: [UIImage], title: String? = nil) throws -> [ScannedDocument] {
+    func saveScan(pages: [UIImage], title: String? = nil) async throws -> [ScannedDocument] {
         guard let firstPage = pages.first else {
             throw DocumentStoreError.emptyScan
         }
@@ -78,12 +86,19 @@ actor DocumentStore {
         let baseName = UUID().uuidString.lowercased()
         let pdfFilename = "\(baseName).pdf"
         let previewFilename = "\(baseName)-preview.jpg"
+        let pdfURL = DocumentStorage.filesDirectory.appendingPathComponent(pdfFilename)
+        let previewURL = DocumentStorage.filesDirectory.appendingPathComponent(previewFilename)
 
-        let pdfData = try makePDF(from: pages)
+        let pageContents = try await makePageContents(from: pages)
         let previewData = try makePreview(from: firstPage)
 
-        try pdfData.write(to: DocumentStorage.filesDirectory.appendingPathComponent(pdfFilename), options: .atomic)
-        try previewData.write(to: DocumentStorage.filesDirectory.appendingPathComponent(previewFilename), options: .atomic)
+        _ = try await writeMasterPDF(
+            pageContents: pageContents,
+            destinationURL: pdfURL,
+            replacingExistingFile: false,
+            allowImageOnlyFallback: true
+        )
+        try previewData.write(to: previewURL, options: .atomic)
 
         var documents = try loadDocuments()
         let document = ScannedDocument(
@@ -97,6 +112,40 @@ actor DocumentStore {
 
         try persist(documents)
         return documents
+    }
+
+    func ensureSearchablePDFIfNeeded(for document: ScannedDocument) async -> Bool {
+        let sourceURL = document.pdfURL
+
+        do {
+            try prepareStorage()
+        } catch {
+            return false
+        }
+
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            return false
+        }
+
+        guard !PDFSearchInspector.hasSearchableText(at: sourceURL) else {
+            return false
+        }
+
+        do {
+            let pageContents = try await makePageContents(fromLegacyPDFAt: sourceURL)
+            guard pageContents.contains(where: { $0.containsRecognizedText }) else {
+                return false
+            }
+
+            return try await writeMasterPDF(
+                pageContents: pageContents,
+                destinationURL: sourceURL,
+                replacingExistingFile: true,
+                allowImageOnlyFallback: false
+            )
+        } catch {
+            return false
+        }
     }
 
     func rename(_ document: ScannedDocument, title: String) throws -> [ScannedDocument] {
@@ -168,22 +217,120 @@ actor DocumentStore {
         return data
     }
 
-    private func makePDF(from pages: [UIImage]) throws -> Data {
-        let fallbackBounds = CGRect(origin: .zero, size: CGSize(width: 612, height: 792))
-        let renderer = UIGraphicsPDFRenderer(bounds: fallbackBounds)
+    private func writeMasterPDF(
+        pageContents: [ScanPageContent],
+        destinationURL: URL,
+        replacingExistingFile: Bool,
+        allowImageOnlyFallback: Bool
+    ) async throws -> Bool {
+        let temporaryURL = temporaryPDFURL()
+        let imageOnlyPageContents = pageContents.map { $0.imageOnly }
 
-        let data = renderer.pdfData { context in
-            for image in pages {
-                let pageRect = CGRect(origin: .zero, size: image.size)
-                context.beginPage(withBounds: pageRect, pageInfo: [:])
-                image.draw(in: pageRect)
+        try fileManager.createDirectory(
+            at: temporaryURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        defer {
+            if fileManager.fileExists(atPath: temporaryURL.path) {
+                try? fileManager.removeItem(at: temporaryURL)
             }
         }
 
-        guard !data.isEmpty else {
+        let renderResult = try searchablePDFRenderer.write(pages: pageContents, to: temporaryURL)
+        let didVerifySearchablePDF = renderResult.containsEmbeddedText &&
+            PDFSearchInspector.verifySearchableText(at: temporaryURL, expectedTokens: renderResult.searchableTokens)
+
+        if didVerifySearchablePDF {
+            try movePDF(
+                from: temporaryURL,
+                to: destinationURL,
+                replacingExistingFile: replacingExistingFile
+            )
+            return true
+        }
+
+        guard allowImageOnlyFallback else {
+            return false
+        }
+
+        if fileManager.fileExists(atPath: temporaryURL.path) {
+            try fileManager.removeItem(at: temporaryURL)
+        }
+
+        _ = try searchablePDFRenderer.write(pages: imageOnlyPageContents, to: temporaryURL)
+        try movePDF(
+            from: temporaryURL,
+            to: destinationURL,
+            replacingExistingFile: replacingExistingFile
+        )
+        return false
+    }
+
+    private func movePDF(from sourceURL: URL, to destinationURL: URL, replacingExistingFile: Bool) throws {
+        if replacingExistingFile, fileManager.fileExists(atPath: destinationURL.path) {
+            _ = try fileManager.replaceItemAt(destinationURL, withItemAt: sourceURL)
+            return
+        }
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.moveItem(at: sourceURL, to: destinationURL)
+    }
+
+    private func makePageContents(from pages: [UIImage]) async throws -> [ScanPageContent] {
+        var pageContents: [ScanPageContent] = []
+        pageContents.reserveCapacity(pages.count)
+
+        for page in pages {
+            try Task.checkCancellation()
+            let raster = try ScanPageRasterizer.makeUprightRaster(from: page)
+            let recognizedLines = await recognizeTextSafely(in: raster)
+            pageContents.append(ScanPageContent(raster: raster, lines: recognizedLines))
+        }
+
+        return pageContents
+    }
+
+    private func makePageContents(fromLegacyPDFAt url: URL) async throws -> [ScanPageContent] {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
             throw DocumentStoreError.pdfCreationFailed
         }
 
-        return data
+        var pageContents: [ScanPageContent] = []
+        pageContents.reserveCapacity(document.pageCount)
+
+        for pageIndex in 0..<document.pageCount {
+            try Task.checkCancellation()
+
+            guard let page = document.page(at: pageIndex) else {
+                throw DocumentStoreError.pdfCreationFailed
+            }
+
+            let raster = try SearchablePDFRenderer.renderUprightRaster(from: page)
+            let recognizedLines = await recognizeTextSafely(in: raster)
+            pageContents.append(ScanPageContent(raster: raster, lines: recognizedLines))
+        }
+
+        return pageContents
+    }
+
+    private func recognizeTextSafely(in raster: ScanPageRaster) async -> [RecognizedTextLine] {
+        do {
+            return try await ocrService.recognizeText(in: raster)
+        } catch is CancellationError {
+            return []
+        } catch {
+            return []
+        }
+    }
+
+    private func temporaryPDFURL() -> URL {
+        fileManager.temporaryDirectory
+            .appendingPathComponent("DocumentLibrary", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: false)
+            .appendingPathExtension("pdf")
     }
 }

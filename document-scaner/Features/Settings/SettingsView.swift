@@ -12,6 +12,8 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @AppStorage(AppPreferenceKey.useDarkMode) private var useDarkMode = false
+    @AppStorage(AppPreferenceKey.ocrAutoDetectLanguage) private var ocrAutoDetectLanguage = true
+    @State private var selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
     @State private var didCopyAppDetails = false
 
     var body: some View {
@@ -42,6 +44,23 @@ struct SettingsView: View {
                 Text("Library")
             } footer: {
                 Text("These settings affect the way documents are displayed, how PDFs are prepared for sharing, and how deletion is handled.")
+            }
+
+            Section {
+                Toggle("Auto-Detect Languages", isOn: $ocrAutoDetectLanguage)
+                    .onChange(of: ocrAutoDetectLanguage) { newValue in
+                        OCRPreferences.setStoredAutoDetectLanguage(newValue)
+                    }
+
+                NavigationLink {
+                    OCRLanguageSelectionView(selectedLanguageCodes: $selectedOCRLanguageCodes)
+                } label: {
+                    LabeledContent("Preferred Languages", value: ocrLanguageSummary)
+                }
+            } header: {
+                Text("Text Recognition")
+            } footer: {
+                Text("Searchable PDFs are created fully offline using on-device OCR. Preferred languages are used as recognition hints, and auto-detect expands recognition when the request supports it.")
             }
 
             Section {
@@ -117,6 +136,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
+        }
         .alert("Copied", isPresented: $didCopyAppDetails) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -127,6 +149,67 @@ struct SettingsView: View {
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    private var ocrLanguageSummary: String {
+        let optionsByCode = Dictionary(uniqueKeysWithValues: OCRPreferences.availableLanguageOptions().map { ($0.code, $0.displayName) })
+        let titles = selectedOCRLanguageCodes.compactMap { optionsByCode[$0] }
+
+        if titles.isEmpty {
+            return "Device Defaults"
+        }
+
+        return titles.joined(separator: ", ")
+    }
+}
+
+private struct OCRLanguageSelectionView: View {
+    @Binding var selectedLanguageCodes: [String]
+    @State private var availableLanguages = OCRPreferences.availableLanguageOptions()
+
+    var body: some View {
+        List {
+            ForEach(availableLanguages) { option in
+                Button {
+                    toggleSelection(for: option.code)
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(option.displayName)
+                                .foregroundStyle(.primary)
+
+                            Text(option.code)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: selectedLanguageCodes.contains(option.code) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(selectedLanguageCodes.contains(option.code) ? Color.accentColor : .secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .navigationTitle("OCR Languages")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            availableLanguages = OCRPreferences.availableLanguageOptions()
+            selectedLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
+        }
+    }
+
+    private func toggleSelection(for code: String) {
+        if let index = selectedLanguageCodes.firstIndex(of: code) {
+            selectedLanguageCodes.remove(at: index)
+        } else {
+            selectedLanguageCodes.append(code)
+        }
+
+        selectedLanguageCodes = OCRPreferences.intersectWithSupportedLanguages(selectedLanguageCodes)
+        OCRPreferences.setStoredPreferredLanguageCodes(selectedLanguageCodes)
     }
 }
 

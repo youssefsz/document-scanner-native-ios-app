@@ -59,6 +59,7 @@ struct DocumentDetailView: View {
         .task(id: document.id) {
             loadPages()
             await requestNativeReviewIfNeeded()
+            await refreshSearchablePDFIfNeeded()
         }
         .confirmationDialog("Delete this document?", isPresented: $isShowingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Document", role: .destructive) {
@@ -474,6 +475,13 @@ struct DocumentDetailView: View {
         guard !Task.isCancelled else { return }
 
         requestReview()
+    }
+
+    private func refreshSearchablePDFIfNeeded() async {
+        let didUpgrade = await library.ensureSearchablePDFIfNeeded(for: currentDocument)
+        guard didUpgrade else { return }
+        guard !Task.isCancelled else { return }
+        loadPages()
     }
 }
 
