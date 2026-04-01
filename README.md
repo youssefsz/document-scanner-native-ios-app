@@ -12,12 +12,15 @@ document-scanner-native-ios-app is a local first iOS app for capturing paper doc
 
 - Scan paper documents with VisionKit on a physical iPhone or iPad
 - Convert multi page scans into PDF files automatically
+- Create searchable PDFs with offline on-device OCR
 - Store PDFs and preview images locally on the device
 - Browse saved scans in a simple document library
 - Preview, share, rename, and delete scanned documents
 - Choose PDF export quality before sharing with Low, Medium, High, and Very High presets
 - See the expected shared file size before exporting a document
+- Preserve selectable and searchable text in exported PDFs when OCR is available
 - Control sort order, export quality, delete confirmation, and appearance preferences
+- Choose OCR language preferences for offline text recognition
 - Keep the experience local first with no account system or cloud sync
 
 ## Tech Stack
@@ -69,7 +72,13 @@ Note: the simulator can build and preview the interface, but document capture re
 
 ## Privacy
 
-This project follows a local first approach. Scanned PDFs, preview images, and metadata are stored on the device. The app does not require user accounts or upload documents to a backend service.
+This project follows a local first approach. Scanned PDFs, preview images, OCR processing, and metadata stay on the device. The app does not require user accounts or upload documents to a backend service.
+
+## Recent Updates
+
+- Searchable PDF export now uses offline on-device OCR with embedded text layers for search and selection in compatible PDF readers
+- Export quality presets preserve searchable text while producing separate PDF variants for lower and higher quality sharing
+- OCR language preferences can be configured in Settings
 
 ## Open Source
 
