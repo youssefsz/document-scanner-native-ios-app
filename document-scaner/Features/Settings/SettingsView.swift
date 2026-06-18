@@ -4,17 +4,35 @@
 //
 //
 
+import MessageUI
 import SwiftUI
 import UIKit
 
 struct SettingsView: View {
+    @Environment(\.openURL) private var openURL
+
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @AppStorage(AppPreferenceKey.useDarkMode) private var useDarkMode = false
     @AppStorage(AppPreferenceKey.ocrAutoDetectLanguage) private var ocrAutoDetectLanguage = true
     @State private var selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
-    @State private var didCopyAppDetails = false
+    @State private var activeAlert: SettingsAlert?
+    @State private var isSupportSheetPresented = false
+    @State private var activeSupportDraft: SupportEmailDraft?
+    @State private var isSupportFlowActive = false
+    @State private var pendingSupportTopic: SupportTopic?
+
+    private let supportDiagnosticsProvider: any SupportDiagnosticsProviding
+    private let supportDraftBuilder: any SupportEmailDraftBuilding
+
+    init(
+        supportDiagnosticsProvider: any SupportDiagnosticsProviding = SystemSupportDiagnosticsProvider(),
+        supportDraftBuilder: any SupportEmailDraftBuilding = SupportEmailDraftBuilder()
+    ) {
+        self.supportDiagnosticsProvider = supportDiagnosticsProvider
+        self.supportDraftBuilder = supportDraftBuilder
+    }
 
     var body: some View {
         Form {
@@ -89,13 +107,16 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Link(destination: AppMetadata.supportEmailURL) {
+                Button {
+                    presentSupportTopics()
+                } label: {
                     Label("Email Support", systemImage: "envelope")
                 }
+                .disabled(isSupportFlowActive)
 
                 Button {
-                    UIPasteboard.general.string = AppMetadata.supportDetails
-                    didCopyAppDetails = true
+                    UIPasteboard.general.string = supportDiagnosticsProvider.currentDiagnostics().formattedDetails
+                    activeAlert = .copied
                 } label: {
                     Label("Copy App Details", systemImage: "doc.on.doc")
                 }
@@ -139,16 +160,104 @@ struct SettingsView: View {
         .onAppear {
             selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
         }
-        .alert("Copied", isPresented: $didCopyAppDetails) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("App details were copied to the clipboard.")
+        .alert(item: $activeAlert) { alert in
+            switch alert {
+            case .copied:
+                Alert(
+                    title: Text("Copied"),
+                    message: Text("App details were copied to the clipboard."),
+                    dismissButton: .cancel(Text("OK"))
+                )
+
+            case .supportUnavailable:
+                Alert(
+                    title: Text("Unable to Open Email"),
+                    message: Text("No email app is available. You can copy the app details and contact \(AppMetadata.supportEmail) manually."),
+                    dismissButton: .cancel(Text("OK"))
+                )
+            }
+        }
+        .sheet(isPresented: $isSupportSheetPresented, onDismiss: handleSupportTopicSheetDismissal) {
+            SupportFeedbackSheet { topic in
+                pendingSupportTopic = topic
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $activeSupportDraft, onDismiss: finishSupportFlow) { draft in
+            SupportMailComposeView(draft: draft) { result, error in
+                activeSupportDraft = nil
+                isSupportFlowActive = false
+
+                if result == .failed || error != nil {
+                    activeAlert = .supportUnavailable
+                }
+            }
         }
     }
 
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    private func presentSupportTopics() {
+        guard !isSupportFlowActive else { return }
+
+        isSupportFlowActive = true
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        isSupportSheetPresented = true
+    }
+
+    private func prepareSupportEmail(for topic: SupportTopic) {
+        guard isSupportFlowActive else { return }
+
+        UISelectionFeedbackGenerator().selectionChanged()
+
+        let diagnostics = supportDiagnosticsProvider.currentDiagnostics()
+        let draft = supportDraftBuilder.makeDraft(topic: topic, diagnostics: diagnostics)
+
+        Task { @MainActor in
+            let emailRouter = SupportEmailRouter(
+                canSendMail: MFMailComposeViewController.canSendMail()
+            )
+
+            switch emailRouter.route(for: draft) {
+            case .nativeComposer:
+                activeSupportDraft = draft
+
+            case let .external(url):
+                openURL(url) { accepted in
+                    Task { @MainActor in
+                        isSupportFlowActive = false
+                        if !accepted {
+                            activeAlert = .supportUnavailable
+                        }
+                    }
+                }
+
+            case .unavailable:
+                isSupportFlowActive = false
+                activeAlert = .supportUnavailable
+            }
+        }
+    }
+
+    private func handleSupportTopicSheetDismissal() {
+        if let pendingSupportTopic {
+            self.pendingSupportTopic = nil
+            prepareSupportEmail(for: pendingSupportTopic)
+            return
+        }
+
+        if activeSupportDraft == nil {
+            isSupportFlowActive = false
+        }
+    }
+
+    private func finishSupportFlow() {
+        activeSupportDraft = nil
+        isSupportFlowActive = false
     }
 
     private var ocrLanguageSummary: String {
@@ -161,6 +270,13 @@ struct SettingsView: View {
 
         return titles.joined(separator: ", ")
     }
+}
+
+private enum SettingsAlert: String, Identifiable {
+    case copied
+    case supportUnavailable
+
+    var id: String { rawValue }
 }
 
 private struct OCRLanguageSelectionView: View {
@@ -466,8 +582,13 @@ private struct LegalDocumentView: View {
                     Text("Contact")
                         .font(.headline)
 
-                    Link(destination: AppMetadata.supportEmailURL) {
+                    if let supportEmailURL = AppMetadata.supportEmailURL {
+                        Link(destination: supportEmailURL) {
+                            Label(AppMetadata.supportEmail, systemImage: "envelope")
+                        }
+                    } else {
                         Label(AppMetadata.supportEmail, systemImage: "envelope")
+                            .foregroundStyle(.secondary)
                     }
 
                     Link(destination: AppMetadata.portfolioURL) {

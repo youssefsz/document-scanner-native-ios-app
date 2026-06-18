@@ -29,35 +29,14 @@ enum AppMetadata {
         return "Version \(version) (\(build))"
     }
 
-    static var supportEmailURL: URL {
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = supportEmail
-        components.queryItems = [
-            URLQueryItem(name: "subject", value: "\(appName) Support"),
-            URLQueryItem(
-                name: "body",
-                value: """
-                Hello \(creatorName),
-
-                I need help with \(appName).
-
-                \(supportDetails)
-
-                Please describe the issue:
-                """
-            )
-        ]
-
-        return components.url!
+    static var supportEmailURL: URL? {
+        let diagnostics = SystemSupportDiagnosticsProvider().currentDiagnostics()
+        let draft = SupportEmailDraftBuilder().makeDraft(topic: .generalFeedback, diagnostics: diagnostics)
+        return draft.mailtoURL ?? URL(string: "mailto:\(supportEmail)")
     }
 
     static var supportDetails: String {
-        """
-        \(appName)
-        \(versionDescription)
-        iOS \(ProcessInfo.processInfo.operatingSystemVersionString)
-        """
+        SystemSupportDiagnosticsProvider().currentDiagnostics().formattedDetails
     }
 
     static var appStoreID: String? {

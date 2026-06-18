@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		6155168D2F5C963900C877D8 /* DocScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "DocScanner.app"; path = DocScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "document-scanerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +17,22 @@
 			path = "document-scaner";
 			sourceTree = "<group>";
 		};
+		A1B2C3D52F5C963900C877D8 /* document-scanerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "document-scanerTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		6155168A2F5C963900C877D8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D62F5C963900C877D8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				6155168F2F5C963900C877D8 /* document-scaner */,
+				A1B2C3D52F5C963900C877D8 /* document-scanerTests */,
 				6155168E2F5C963900C877D8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				6155168D2F5C963900C877D8 /* document-scaner.app */,
+				A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +85,29 @@
 			productReference = 6155168D2F5C963900C877D8 /* document-scaner.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A1B2C3D72F5C963900C877D8 /* document-scanerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3DE2F5C963900C877D8 /* Build configuration list for PBXNativeTarget "document-scanerTests" */;
+			buildPhases = (
+				A1B2C3D82F5C963900C877D8 /* Sources */,
+				A1B2C3D62F5C963900C877D8 /* Frameworks */,
+				A1B2C3D92F5C963900C877D8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3DD2F5C963900C877D8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D52F5C963900C877D8 /* document-scanerTests */,
+			);
+			name = "document-scanerTests";
+			packageProductDependencies = (
+			);
+			productName = "document-scanerTests";
+			productReference = A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +120,10 @@
 				TargetAttributes = {
 					6155168C2F5C963900C877D8 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					A1B2C3D72F5C963900C877D8 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 6155168C2F5C963900C877D8;
 					};
 				};
 			};
@@ -100,12 +142,30 @@
 			projectRoot = "";
 			targets = (
 				6155168C2F5C963900C877D8 /* document-scaner */,
+				A1B2C3D72F5C963900C877D8 /* document-scanerTests */,
 			);
 		};
 /* End PBXProject section */
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 615516852F5C963900C877D8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6155168C2F5C963900C877D8;
+			remoteInfo = "document-scaner";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXResourcesBuildPhase section */
 		6155168B2F5C963900C877D8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D92F5C963900C877D8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +182,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B2C3D82F5C963900C877D8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3DD2F5C963900C877D8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6155168C2F5C963900C877D8 /* document-scaner */;
+			targetProxy = A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		615516962F5C963C00C877D8 /* Debug */ = {
@@ -257,7 +332,7 @@
 				INFOPLIST_FILE = "document-scaner-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.4;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
@@ -289,7 +364,7 @@
 				INFOPLIST_FILE = "document-scaner-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.4;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
@@ -302,6 +377,59 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A1B2C3DA2F5C963900C877D8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.appTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DocScanner.app/DocScanner";
+			};
+			name = Debug;
+		};
+		A1B2C3DB2F5C963900C877D8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.appTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DocScanner.app/DocScanner";
 			};
 			name = Release;
 		};
@@ -322,6 +450,15 @@
 			buildConfigurations = (
 				615516992F5C963C00C877D8 /* Debug */,
 				6155169A2F5C963C00C877D8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3DE2F5C963900C877D8 /* Build configuration list for PBXNativeTarget "document-scanerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3DA2F5C963900C877D8 /* Debug */,
+				A1B2C3DB2F5C963900C877D8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
