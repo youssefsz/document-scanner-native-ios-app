@@ -30,6 +30,8 @@ struct DocumentDetailView: View {
     @State private var isShowingShareSheet = false
     @State private var exportPreviewErrors: [DocumentExportQuality: String] = [:]
     @State private var exportPreviewLoadingQualities: Set<DocumentExportQuality> = []
+    @State private var exportPreparationTasks: [DocumentExportQuality: Task<Void, Never>] = [:]
+    @State private var pendingShareQuality: DocumentExportQuality?
     @State private var pendingSharePresentation = false
     @State private var preparedExports: [DocumentExportQuality: PreparedDocumentExport] = [:]
     @State private var previewErrorMessage: String?
@@ -310,6 +312,7 @@ struct DocumentDetailView: View {
     private func startShare() {
         guard !isPreparingShare, !isDeleting, !isRenaming else { return }
         selectedExportQuality = preferredExportQuality
+        pendingShareQuality = nil
         isShowingExportSheet = true
     }
 
@@ -418,36 +421,62 @@ struct DocumentDetailView: View {
         exportPreviewLoadingQualities.insert(quality)
         let documentToExport = currentDocument
 
-        Task {
+        let task = Task {
             do {
                 let preparedExport = try await Self.exportService.prepareExport(for: documentToExport, quality: quality)
 
                 _ = await MainActor.run {
                     exportPreviewLoadingQualities.remove(quality)
+                    exportPreparationTasks.removeValue(forKey: quality)
                     exportPreviewErrors[quality] = nil
                     preparedExports[quality] = preparedExport
+
+                    if pendingShareQuality == quality {
+                        completeSharePreparation(with: preparedExport, quality: quality)
+                    }
                 }
             } catch is CancellationError {
                 _ = await MainActor.run {
                     exportPreviewLoadingQualities.remove(quality)
+                    exportPreparationTasks.removeValue(forKey: quality)
+
+                    if pendingShareQuality == quality {
+                        pendingShareQuality = nil
+                        isPreparingShare = false
+                    }
                 }
             } catch {
                 _ = await MainActor.run {
                     exportPreviewLoadingQualities.remove(quality)
+                    exportPreparationTasks.removeValue(forKey: quality)
                     exportPreviewErrors[quality] = error.localizedDescription
+
+                    if pendingShareQuality == quality {
+                        pendingShareQuality = nil
+                        isPreparingShare = false
+                    }
                 }
             }
         }
+
+        exportPreparationTasks[quality] = task
     }
 
     private func prepareShare(using quality: DocumentExportQuality) {
         guard !isPreparingShare else { return }
-        guard let preparedExport = preparedExports[quality] else {
-            ensurePreparedExport(for: quality)
-            return
-        }
 
         isPreparingShare = true
+        pendingShareQuality = quality
+
+        if let preparedExport = preparedExports[quality] {
+            completeSharePreparation(with: preparedExport, quality: quality)
+        } else {
+            ensurePreparedExport(for: quality)
+        }
+    }
+
+    private func completeSharePreparation(with preparedExport: PreparedDocumentExport, quality: DocumentExportQuality) {
+        pendingShareQuality = nil
         defaultExportQuality = quality.rawValue
         shareItems = [preparedExport.url]
         pendingSharePresentation = true
@@ -457,9 +486,13 @@ struct DocumentDetailView: View {
 
     private func cleanupPreparedExports() {
         let documentToCleanup = currentDocument
+        exportPreparationTasks.values.forEach { $0.cancel() }
+        exportPreparationTasks = [:]
         preparedExports = [:]
         exportPreviewErrors = [:]
         exportPreviewLoadingQualities = []
+        pendingShareQuality = nil
+        isPreparingShare = false
 
         Task {
             await Self.exportService.removeTemporaryExports(for: documentToCleanup)
@@ -576,28 +609,18 @@ private struct DocumentExportSheet: View {
                             Text("Share")
                         }
                     }
-                    .disabled(isPreparingShare || isLoadingSelectedExport || selectedPreparedExport == nil)
+                    .disabled(isPreparingShare)
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task {
-            for quality in DocumentExportQuality.allCases {
-                onSelectionChange(quality)
-            }
+            onSelectionChange(selectedQuality)
         }
         .onChange(of: selectedQuality) { newValue in
             onSelectionChange(newValue)
         }
-    }
-
-    private var selectedPreparedExport: PreparedDocumentExport? {
-        preparedExports[selectedQuality]
-    }
-
-    private var isLoadingSelectedExport: Bool {
-        loadingQualities.contains(selectedQuality)
     }
 }
 

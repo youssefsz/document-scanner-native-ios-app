@@ -65,12 +65,10 @@ actor DocumentExportService {
             return cachedExport
         }
 
-        let resolvedExports = try await prepareResolvedExports(for: document)
-        cachedExports[document.id] = resolvedExports
-
-        guard let export = resolvedExports[quality] else {
-            throw DocumentExportError.exportCreationFailed
-        }
+        let export = try await prepareRequestedExport(for: document, quality: quality)
+        var documentExports = cachedExports[document.id] ?? [:]
+        documentExports[quality] = export
+        cachedExports[document.id] = documentExports
 
         return export
     }
@@ -86,7 +84,10 @@ actor DocumentExportService {
         try? fileManager.removeItem(at: directoryURL)
     }
 
-    private func prepareResolvedExports(for document: ScannedDocument) async throws -> [DocumentExportQuality: PreparedDocumentExport] {
+    private func prepareRequestedExport(
+        for document: ScannedDocument,
+        quality: DocumentExportQuality
+    ) async throws -> PreparedDocumentExport {
         _ = await store.ensureSearchablePDFIfNeeded(for: document)
         let sourceURL = document.pdfURL
 
@@ -106,27 +107,20 @@ actor DocumentExportService {
             withIntermediateDirectories: true,
             attributes: nil
         )
+        try Task.checkCancellation()
 
-        var resolved: [DocumentExportQuality: PreparedDocumentExport] = [:]
+        let exportURL = exportDirectoryURL.appendingPathComponent(
+            exportFilename(for: document, quality: quality),
+            isDirectory: false
+        )
 
-        for quality in DocumentExportQuality.allCases {
-            try Task.checkCancellation()
-
-            let exportURL = exportDirectoryURL.appendingPathComponent(
-                exportFilename(for: document, quality: quality),
-                isDirectory: false
-            )
-
-            try await writeExport(
-                quality: quality,
-                from: pdfDocument,
-                to: exportURL
-            )
-            let fileSize = try fileSizeBytes(for: exportURL)
-            resolved[quality] = PreparedDocumentExport(quality: quality, url: exportURL, fileSizeBytes: fileSize)
-        }
-
-        return resolved
+        try await writeExport(
+            quality: quality,
+            from: pdfDocument,
+            to: exportURL
+        )
+        let fileSize = try fileSizeBytes(for: exportURL)
+        return PreparedDocumentExport(quality: quality, url: exportURL, fileSizeBytes: fileSize)
     }
 
     private func writeExport(

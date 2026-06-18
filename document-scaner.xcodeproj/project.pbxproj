@@ -6,8 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 615516852F5C963900C877D8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6155168C2F5C963900C877D8;
+			remoteInfo = "document-scaner";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		6155168D2F5C963900C877D8 /* DocScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "DocScanner.app"; path = DocScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6155168D2F5C963900C877D8 /* DocScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DocScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "document-scanerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -54,7 +64,7 @@
 		6155168E2F5C963900C877D8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6155168D2F5C963900C877D8 /* document-scaner.app */,
+				6155168D2F5C963900C877D8 /* DocScanner.app */,
 				A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */,
 			);
 			name = Products;
@@ -82,7 +92,7 @@
 			packageProductDependencies = (
 			);
 			productName = "document-scaner";
-			productReference = 6155168D2F5C963900C877D8 /* document-scaner.app */;
+			productReference = 6155168D2F5C963900C877D8 /* DocScanner.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A1B2C3D72F5C963900C877D8 /* document-scanerTests */ = {
@@ -146,16 +156,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXContainerItemProxy section */
-		A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 615516852F5C963900C877D8 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 6155168C2F5C963900C877D8;
-			remoteInfo = "document-scaner";
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		6155168B2F5C963900C877D8 /* Resources */ = {
@@ -332,7 +332,7 @@
 				INFOPLIST_FILE = "document-scaner-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
@@ -364,7 +364,7 @@
 				INFOPLIST_FILE = "document-scaner-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
