@@ -64,9 +64,9 @@ private struct ShimmerModifier: ViewModifier {
 
 struct DocumentCardSkeleton: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous)
                     .fill(Color(.secondarySystemGroupedBackground))
 
                 ZStack {
@@ -94,17 +94,20 @@ struct DocumentCardSkeleton: View {
                     .offset(y: -2)
                 }
             }
-            .frame(height: 180)
+            .frame(height: DocumentCardLayout.thumbnailHeight)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 8) {
-                SkeletonBlock(height: 16, cornerRadius: 8)
-                SkeletonBlock(width: 112, height: 16, cornerRadius: 8)
-                SkeletonBlock(width: 94, height: 12, cornerRadius: 6)
-                SkeletonBlock(width: 62, height: 10, cornerRadius: 5)
+            VStack(alignment: .leading, spacing: 7) {
+                SkeletonBlock(width: 108, height: 17, cornerRadius: 8)
+                SkeletonBlock(width: 132, height: 11, cornerRadius: 5)
             }
-            .padding(.horizontal, 2)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: DocumentCardLayout.detailsHeight,
+                maxHeight: DocumentCardLayout.detailsHeight,
+                alignment: .topLeading
+            )
         }
         .padding(12)
         .frame(
@@ -119,7 +122,7 @@ struct DocumentCardSkeleton: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.22), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous))
     }

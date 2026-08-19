@@ -17,6 +17,7 @@ struct LibraryView: View {
     @State private var isSavingPendingScan = false
     @State private var isDeletingSelection = false
     @State private var isNamingPendingScan = false
+    @State private var isContentScrolled = false
     @State private var isSelectionMode = false
     @State private var isShowingDeleteConfirmation = false
     @State private var pendingScanPages: [UIImage] = []
@@ -33,48 +34,61 @@ struct LibraryView: View {
                 let cardWidth = floor((proxy.size.width - (horizontalPadding * 2) - gridSpacing) / 2)
 
                 ScrollView {
-                    if library.isLoading, library.documents.isEmpty {
-                        LibraryLoadingSkeletonView(cardWidth: cardWidth, spacing: gridSpacing)
-                    } else if displayedDocuments.isEmpty {
-                        emptyState
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 80)
-                            .padding(.horizontal, 24)
-                    } else {
-                        VStack(spacing: gridSpacing) {
-                            ForEach(Array(documentRows.enumerated()), id: \.offset) { _, row in
-                                HStack(alignment: .top, spacing: gridSpacing) {
-                                    ForEach(row) { document in
-                                        LibraryDocumentTile(
-                                            document: document,
-                                            cardWidth: cardWidth,
-                                            isSelectionMode: isSelectionMode,
-                                            isSelected: selectedDocumentIDs.contains(document.id),
-                                            onTap: {
-                                                handlePrimaryAction(for: document)
-                                            },
-                                            onLongPress: {
-                                                handleLongPress(on: document)
-                                            }
-                                        )
-                                    }
+                    VStack(spacing: 0) {
+                        LibraryScrollPositionReader()
 
-                                    if row.count == 1 {
-                                        Color.clear
-                                            .frame(width: cardWidth, height: DocumentCardLayout.totalCardHeight)
+                        if library.isLoading, library.documents.isEmpty {
+                            LibraryLoadingSkeletonView(cardWidth: cardWidth, spacing: gridSpacing)
+                        } else if displayedDocuments.isEmpty {
+                            emptyState
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 80)
+                                .padding(.horizontal, 24)
+                        } else {
+                            VStack(spacing: gridSpacing) {
+                                ForEach(Array(documentRows.enumerated()), id: \.offset) { _, row in
+                                    HStack(alignment: .top, spacing: gridSpacing) {
+                                        ForEach(row) { document in
+                                            LibraryDocumentTile(
+                                                document: document,
+                                                cardWidth: cardWidth,
+                                                isSelectionMode: isSelectionMode,
+                                                isSelected: selectedDocumentIDs.contains(document.id),
+                                                onTap: {
+                                                    handlePrimaryAction(for: document)
+                                                },
+                                                onLongPress: {
+                                                    handleLongPress(on: document)
+                                                }
+                                            )
+                                        }
+
+                                        if row.count == 1 {
+                                            Color.clear
+                                                .frame(width: cardWidth, height: DocumentCardLayout.totalCardHeight)
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal, horizontalPadding)
+                            .padding(.top, 20)
+                            .padding(.bottom, 140)
                         }
-                        .padding(.horizontal, horizontalPadding)
-                        .padding(.top, 20)
-                        .padding(.bottom, 140)
                     }
                 }
+                .coordinateSpace(name: LibraryScrollCoordinateSpace.name)
+                .onPreferenceChange(LibraryScrollOffsetPreferenceKey.self) { offset in
+                    isContentScrolled = offset < -1
+                }
                 .background(Color(.systemGroupedBackground))
-                .navigationTitle(isSelectionMode ? selectionTitle : "Documents")
-                .navigationBarTitleDisplayMode(isSelectionMode ? .inline : .large)
+                .navigationTitle("Documents")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        LibraryToolbarTitle(title: isSelectionMode ? selectionTitle : "Documents")
+                    }
+
                     if isSelectionMode {
                         ToolbarItem(placement: .navigationBarLeading) {
                             Button("Cancel") {
@@ -95,9 +109,11 @@ struct LibraryView: View {
                             } label: {
                                 Image(systemName: "gearshape")
                             }
+                            .accessibilityLabel("Settings")
                         }
                     }
                 }
+                .appTopScrollEdgeEffect(isScrolled: isContentScrolled)
                 .overlay(alignment: .bottom) {
                     bottomAccessory
                 }
@@ -443,6 +459,48 @@ struct LibraryView: View {
 #Preview {
     LibraryView()
         .environmentObject(DocumentLibrary.preview)
+}
+
+private struct LibraryToolbarTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 9)
+            .appToolbarTitleSurface()
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private enum LibraryScrollCoordinateSpace {
+    static let name = "library-scroll"
+}
+
+private struct LibraryScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct LibraryScrollPositionReader: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(
+                    key: LibraryScrollOffsetPreferenceKey.self,
+                    value: proxy.frame(in: .named(LibraryScrollCoordinateSpace.name)).minY
+                )
+        }
+        .frame(height: 0)
+        .accessibilityHidden(true)
+    }
 }
 
 private struct LibraryDocumentTile: View {

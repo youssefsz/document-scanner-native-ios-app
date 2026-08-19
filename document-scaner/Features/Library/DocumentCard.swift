@@ -8,10 +8,11 @@ import SwiftUI
 import UIKit
 
 enum DocumentCardLayout {
-    static let cardCornerRadius: CGFloat = 28
-    static let thumbnailHeight: CGFloat = 176
-    static let detailsHeight: CGFloat = 92
-    static let totalCardHeight: CGFloat = 304
+    static let cardCornerRadius: CGFloat = 18
+    static let thumbnailCornerRadius: CGFloat = 10
+    static let thumbnailHeight: CGFloat = 210
+    static let detailsHeight: CGFloat = 46
+    static let totalCardHeight: CGFloat = 292
 }
 
 struct DocumentCard: View {
@@ -20,34 +21,44 @@ struct DocumentCard: View {
     var isSelected = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             DocumentThumbnail(url: document.previewURL)
                 .frame(height: DocumentCardLayout.thumbnailHeight)
                 .frame(maxWidth: .infinity)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(document.title)
                     .font(.headline)
+                    .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 44, alignment: .top)
-                    .clipped()
 
-                Text(document.createdAt.formatted(date: .numeric, time: .omitted))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "calendar")
+
+                        Text(document.createdAt.formatted(.dateTime.month(.abbreviated).day().year()))
+                    }
                     .lineLimit(1)
 
-                Text("\(document.pageCount) page\(document.pageCount == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    Text("\u{2022}")
+                        .accessibilityHidden(true)
+
+                    HStack(spacing: 3) {
+                        Image(systemName: "doc")
+
+                        Text("\(document.pageCount) page\(document.pageCount == 1 ? "" : "s")")
+                    }
                     .lineLimit(1)
+                }
+                .font(.caption2)
+                .fontWidth(.condensed)
+                .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: DocumentCardLayout.detailsHeight, maxHeight: DocumentCardLayout.detailsHeight, alignment: .topLeading)
-            .padding(.horizontal, 2)
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: DocumentCardLayout.totalCardHeight, maxHeight: DocumentCardLayout.totalCardHeight, alignment: .topLeading)
@@ -60,18 +71,11 @@ struct DocumentCard: View {
         .contentShape(RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous))
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .scaleEffect(cardScale)
-        .shadow(color: shadowColor, radius: shadowRadius, y: shadowYOffset)
     }
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: backgroundColors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(backgroundColor)
     }
 
     private var cardBorder: some View {
@@ -90,22 +94,13 @@ struct DocumentCard: View {
         }
     }
 
-    private var backgroundColors: [Color] {
+    private var backgroundColor: Color {
         if isSelected {
-            [
-                Color.accentColor.opacity(0.18),
-                Color(.secondarySystemGroupedBackground)
-            ]
+            Color.accentColor.opacity(0.12)
         } else if isSelectionMode {
-            [
-                Color(.secondarySystemGroupedBackground),
-                Color(.tertiarySystemGroupedBackground)
-            ]
+            Color(.tertiarySystemGroupedBackground)
         } else {
-            [
-                Color(.secondarySystemGroupedBackground),
-                Color(.secondarySystemGroupedBackground)
-            ]
+            Color(.secondarySystemGroupedBackground)
         }
     }
 
@@ -114,7 +109,7 @@ struct DocumentCard: View {
             return Color.accentColor.opacity(0.9)
         }
 
-        return isSelectionMode ? Color(uiColor: .quaternaryLabel).opacity(0.3) : Color(uiColor: .quaternaryLabel).opacity(0.22)
+        return isSelectionMode ? Color(uiColor: .separator).opacity(0.3) : Color(uiColor: .separator).opacity(0.22)
     }
 
     private var cardScale: CGFloat {
@@ -122,17 +117,6 @@ struct DocumentCard: View {
         return isSelected ? 1 : 0.985
     }
 
-    private var shadowColor: Color {
-        isSelected ? Color.accentColor.opacity(0.14) : Color.black.opacity(isSelectionMode ? 0.06 : 0.08)
-    }
-
-    private var shadowRadius: CGFloat {
-        isSelected ? 18 : 12
-    }
-
-    private var shadowYOffset: CGFloat {
-        isSelected ? 10 : 6
-    }
 }
 
 private struct DocumentThumbnail: View {
@@ -176,7 +160,7 @@ private struct DocumentThumbnail: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous))
     }
 }
 

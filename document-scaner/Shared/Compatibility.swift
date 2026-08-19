@@ -54,6 +54,49 @@ extension View {
             buttonStyle(AppViewerControlButtonStyle(foregroundColor: isDestructive ? .red : .white))
         }
     }
+
+    @ViewBuilder
+    func appToolbarTitleSurface() -> some View {
+        if #available(iOS 26.0, *) {
+            glassEffect(.regular, in: .capsule)
+        } else {
+            background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                }
+        }
+    }
+
+    @ViewBuilder
+    func appTopScrollEdgeEffect(isScrolled: Bool) -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            overlay(alignment: .top) {
+                LegacyTopScrollEdgeEffect()
+                    .opacity(isScrolled ? 1 : 0)
+                    .animation(.easeOut(duration: 0.18), value: isScrolled)
+            }
+        }
+    }
+}
+
+private struct LegacyTopScrollEdgeEffect: View {
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .frame(height: 28)
+            .mask {
+                LinearGradient(
+                    colors: [.black, .black.opacity(0.45), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 }
 
 private struct AppProminentButtonStyle: ButtonStyle {
