@@ -8,21 +8,6 @@ import Foundation
 import PDFKit
 import UIKit
 
-enum DocumentStorage {
-    nonisolated static var rootDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DocumentLibrary", isDirectory: true)
-    }
-
-    nonisolated static var filesDirectory: URL {
-        rootDirectory.appendingPathComponent("Files", isDirectory: true)
-    }
-
-    nonisolated static var metadataURL: URL {
-        rootDirectory.appendingPathComponent("library.json", isDirectory: false)
-    }
-}
-
 enum DocumentStoreError: LocalizedError {
     case emptyScan
     case previewCreationFailed
@@ -42,40 +27,33 @@ enum DocumentStoreError: LocalizedError {
 
 actor DocumentStore {
     private let fileManager = FileManager.default
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+    private let repository: any LibraryRepository
+    private let paths: StoragePaths
     private let ocrService: OCRService
     private let searchablePDFRenderer: SearchablePDFRenderer
 
     init(
+        repository: any LibraryRepository = CoreDataLibraryRepository(),
+        paths: StoragePaths = .production,
         ocrService: OCRService = OCRService(),
         searchablePDFRenderer: SearchablePDFRenderer = SearchablePDFRenderer()
     ) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        self.encoder = encoder
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        self.decoder = decoder
+        self.repository = repository
+        self.paths = paths
         self.ocrService = ocrService
         self.searchablePDFRenderer = searchablePDFRenderer
     }
 
-    func loadDocuments() throws -> [ScannedDocument] {
-        try prepareStorage()
-
-        guard fileManager.fileExists(atPath: DocumentStorage.metadataURL.path) else {
-            return []
-        }
-
-        let data = try Data(contentsOf: DocumentStorage.metadataURL)
-        let documents = try decoder.decode([ScannedDocument].self, from: data)
-        return documents.sorted { $0.createdAt > $1.createdAt }
+    func loadDocuments() async throws -> [ScannedDocument] {
+        try await repository.bootstrap()
+        return try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
     }
 
-    func saveScan(pages: [UIImage], title: String? = nil) async throws -> [ScannedDocument] {
+    func saveScan(
+        pages: [UIImage],
+        title: String? = nil,
+        folderID: UUID? = nil
+    ) async throws -> [ScannedDocument] {
         guard let firstPage = pages.first else {
             throw DocumentStoreError.emptyScan
         }
@@ -86,36 +64,79 @@ actor DocumentStore {
         let baseName = UUID().uuidString.lowercased()
         let pdfFilename = "\(baseName).pdf"
         let previewFilename = "\(baseName)-preview.jpg"
-        let pdfURL = DocumentStorage.filesDirectory.appendingPathComponent(pdfFilename)
-        let previewURL = DocumentStorage.filesDirectory.appendingPathComponent(previewFilename)
+        let pdfURL = paths.filesDirectory.appendingPathComponent(pdfFilename)
+        let previewURL = paths.filesDirectory.appendingPathComponent(previewFilename)
+        let operationDirectory = paths.stagingDirectory.appendingPathComponent(baseName, isDirectory: true)
+        let stagedPDFURL = operationDirectory.appendingPathComponent(pdfFilename)
+        let stagedPreviewURL = operationDirectory.appendingPathComponent(previewFilename)
+
+        try fileManager.createDirectory(at: operationDirectory, withIntermediateDirectories: true)
+        defer {
+            if fileManager.fileExists(atPath: operationDirectory.path) {
+                try? fileManager.removeItem(at: operationDirectory)
+            }
+        }
+        let manifest = ScanOperationManifest(
+            documentID: UUID(uuidString: baseName) ?? UUID(),
+            pdfFilename: pdfFilename,
+            previewFilename: previewFilename
+        )
+        try JSONEncoder().encode(manifest)
+            .write(to: operationDirectory.appendingPathComponent("operation.json"), options: .atomic)
 
         let pageContents = try await makePageContents(from: pages)
         let previewData = try makePreview(from: firstPage)
 
         _ = try await writeMasterPDF(
             pageContents: pageContents,
-            destinationURL: pdfURL,
+            destinationURL: stagedPDFURL,
             replacingExistingFile: false,
             allowImageOnlyFallback: true
         )
-        try previewData.write(to: previewURL, options: .atomic)
+        try previewData.write(to: stagedPreviewURL, options: .atomic)
 
-        var documents = try loadDocuments()
+        guard fileManager.fileExists(atPath: stagedPDFURL.path),
+              fileManager.fileExists(atPath: stagedPreviewURL.path),
+              PDFDocument(url: stagedPDFURL)?.pageCount == pages.count,
+              !previewData.isEmpty else {
+            try? fileManager.removeItem(at: operationDirectory)
+            throw DocumentStoreError.pdfCreationFailed
+        }
+
         let document = ScannedDocument(
+            id: manifest.documentID,
             title: DocumentTitleFormatter.sanitized(title, fallbackDate: timestamp),
             createdAt: timestamp,
             pageCount: pages.count,
             pdfFilename: pdfFilename,
-            previewFilename: previewFilename
+            previewFilename: previewFilename,
+            folderID: folderID
         )
-        documents.insert(document, at: 0)
-
-        try persist(documents)
-        return documents
+        var metadataCommitted = false
+        do {
+            try fileManager.moveItem(at: stagedPDFURL, to: pdfURL)
+            try fileManager.moveItem(at: stagedPreviewURL, to: previewURL)
+            do {
+                try await repository.createDocument(document)
+                metadataCommitted = true
+            } catch {
+                try? fileManager.removeItem(at: pdfURL)
+                try? fileManager.removeItem(at: previewURL)
+                throw error
+            }
+            try? fileManager.removeItem(at: operationDirectory)
+            return try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
+        } catch {
+            if !metadataCommitted {
+                if fileManager.fileExists(atPath: pdfURL.path) { try? fileManager.removeItem(at: pdfURL) }
+                if fileManager.fileExists(atPath: previewURL.path) { try? fileManager.removeItem(at: previewURL) }
+            }
+            throw error
+        }
     }
 
     func ensureSearchablePDFIfNeeded(for document: ScannedDocument) async -> Bool {
-        let sourceURL = document.pdfURL
+        let sourceURL = document.pdfURL(in: paths)
 
         do {
             try prepareStorage()
@@ -148,55 +169,22 @@ actor DocumentStore {
         }
     }
 
-    func rename(_ document: ScannedDocument, title: String) throws -> [ScannedDocument] {
-        try prepareStorage()
-
-        var documents = try loadDocuments()
-
-        guard let index = documents.firstIndex(where: { $0.id == document.id }) else {
-            return documents
-        }
-
-        documents[index].title = DocumentTitleFormatter.sanitized(title, fallbackDate: documents[index].createdAt)
-        try persist(documents)
-        return documents
+    func rename(_ document: ScannedDocument, title: String) async throws -> [ScannedDocument] {
+        try await repository.renameDocument(id: document.id, title: title)
+        return try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
     }
 
-    func delete(_ document: ScannedDocument) throws -> [ScannedDocument] {
-        try delete([document])
+    func delete(_ document: ScannedDocument) async throws -> [ScannedDocument] {
+        try await delete([document])
     }
 
-    func delete(_ documents: [ScannedDocument]) throws -> [ScannedDocument] {
-        try prepareStorage()
-
-        let identifiers = Set(documents.map(\.id))
-
-        for document in documents {
-            let pdfURL = document.pdfURL
-            let previewURL = document.previewURL
-
-            if fileManager.fileExists(atPath: pdfURL.path) {
-                try fileManager.removeItem(at: pdfURL)
-            }
-
-            if fileManager.fileExists(atPath: previewURL.path) {
-                try fileManager.removeItem(at: previewURL)
-            }
-        }
-
-        let updatedDocuments = try loadDocuments().filter { !identifiers.contains($0.id) }
-        try persist(updatedDocuments)
-        return updatedDocuments
+    func delete(_ documents: [ScannedDocument]) async throws -> [ScannedDocument] {
+        try await repository.deleteDocuments(ids: Set(documents.map(\.id)))
+        return try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
     }
 
     private func prepareStorage() throws {
-        try fileManager.createDirectory(at: DocumentStorage.rootDirectory, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: DocumentStorage.filesDirectory, withIntermediateDirectories: true)
-    }
-
-    private func persist(_ documents: [ScannedDocument]) throws {
-        let data = try encoder.encode(documents.sorted { $0.createdAt > $1.createdAt })
-        try data.write(to: DocumentStorage.metadataURL, options: .atomic)
+        try paths.prepare(fileManager: fileManager)
     }
 
     private func makePreview(from image: UIImage) throws -> Data {
@@ -333,4 +321,10 @@ actor DocumentStore {
             .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: false)
             .appendingPathExtension("pdf")
     }
+}
+
+nonisolated struct ScanOperationManifest: Codable, Sendable {
+    let documentID: UUID
+    let pdfFilename: String
+    let previewFilename: String
 }

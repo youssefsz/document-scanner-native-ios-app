@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct document_scanerApp: App {
@@ -17,6 +18,9 @@ struct document_scanerApp: App {
             ContentView()
                 .environmentObject(library)
                 .preferredColorScheme(useDarkMode ? .dark : .light)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    Task { await ThumbnailPipeline.shared.clearCache() }
+                }
         }
     }
 }

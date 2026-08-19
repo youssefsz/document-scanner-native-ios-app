@@ -62,10 +62,13 @@ struct DocumentTitleEditorSheet: View {
 
                 Spacer(minLength: 0)
 
-                Button(action: onSave) {
+                Button {
+                    guard !isSaving else { return }
+                    onSave()
+                } label: {
                     Group {
                         if isSaving {
-                            ProgressView()
+                            AppProminentProgressView(accessibilityLabel: "Saving document")
                                 .controlSize(.regular)
                                 .frame(maxWidth: .infinity)
                         } else {
@@ -77,7 +80,8 @@ struct DocumentTitleEditorSheet: View {
                     .padding(.vertical, 16)
                 }
                 .appProminentButtonStyle()
-                .disabled(trimmedTitle.isEmpty || isSaving)
+                .disabled(trimmedTitle.isEmpty)
+                .accessibilityLabel(isSaving ? "Saving document" : saveButtonTitle)
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

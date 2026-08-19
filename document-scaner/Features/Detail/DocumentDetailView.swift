@@ -216,7 +216,7 @@ struct DocumentDetailView: View {
                 isLoading: isRenaming,
                 action: startRename
             )
-            .disabled(isDeleting || isPreparingShare || isRenaming)
+            .disabled(isDeleting || isPreparingShare)
         }
     }
 
@@ -240,7 +240,7 @@ struct DocumentDetailView: View {
                     isLoading: isPreparingShare,
                     action: startShare
                 )
-                .disabled(renderedPages.isEmpty || isPreparingShare || isDeleting || isRenaming)
+                .disabled(renderedPages.isEmpty || isDeleting || isRenaming)
 
                 Spacer()
 
@@ -255,7 +255,7 @@ struct DocumentDetailView: View {
                         deleteDocument()
                     }
                 }
-                .disabled(isDeleting || isPreparingShare || isRenaming)
+                .disabled(isPreparingShare || isRenaming)
             }
         }
     }
@@ -287,7 +287,7 @@ struct DocumentDetailView: View {
     }
 
     private var currentDocument: ScannedDocument {
-        library.documents.first(where: { $0.id == document.id }) ?? document
+        library.allDocuments.first(where: { $0.id == document.id }) ?? document
     }
 
     private func toggleControls() {
@@ -303,7 +303,7 @@ struct DocumentDetailView: View {
             await library.delete(currentDocument)
             isDeleting = false
 
-            if !library.documents.contains(where: { $0.id == document.id }) {
+            if library.activeError == nil {
                 dismiss()
             }
         }
@@ -517,11 +517,16 @@ private struct ViewerControlButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            guard !isLoading else { return }
+            action()
+        } label: {
             Group {
                 if isLoading {
                     ProgressView()
                         .controlSize(.regular)
+                        .tint(isDestructive ? .red : .white)
+                        .foregroundStyle(isDestructive ? .red : .white)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 17, weight: .semibold))
@@ -604,12 +609,12 @@ private struct DocumentExportSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(action: onShare) {
                         if isPreparingShare {
-                            ProgressView()
+                            AppToolbarProgressView(accessibilityLabel: "Preparing PDF")
                         } else {
                             Text("Share")
                         }
                     }
-                    .disabled(isPreparingShare)
+                    .accessibilityLabel(isPreparingShare ? "Preparing PDF" : "Share")
                 }
             }
         }

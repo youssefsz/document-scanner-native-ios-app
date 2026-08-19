@@ -6,6 +6,30 @@
 
 import SwiftUI
 
+struct AppProminentProgressView: View {
+    let accessibilityLabel: String
+
+    var body: some View {
+        ProgressView()
+            .progressViewStyle(.circular)
+            .tint(.white)
+            .foregroundStyle(.white)
+            .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+struct AppToolbarProgressView: View {
+    let accessibilityLabel: String
+
+    var body: some View {
+        ProgressView()
+            .progressViewStyle(.circular)
+            .controlSize(.small)
+            .tint(.accentColor)
+            .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 struct AppUnavailableStateView: View {
     let title: String
     let systemImage: String

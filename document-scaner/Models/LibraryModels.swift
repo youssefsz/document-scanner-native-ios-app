@@ -1,0 +1,111 @@
+import Foundation
+
+nonisolated enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
+    case library = "Library"
+    case folders = "Folders"
+
+    var id: Self { self }
+}
+
+nonisolated struct DocumentFolder: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let name: String
+    let normalizedName: String
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+nonisolated struct FolderSummary: Identifiable, Hashable, Sendable {
+    let folder: DocumentFolder
+    let documentCount: Int
+    let newestDocuments: [ScannedDocument]
+
+    var id: UUID { folder.id }
+}
+
+nonisolated enum DocumentScope: Hashable, Sendable {
+    case all
+    case unfiled
+    case folder(UUID)
+}
+
+nonisolated enum LibraryLoadState: Equatable, Sendable {
+    case initialLoading
+    case migrating
+    case loaded
+    case empty
+    case migrationFailed(String)
+    case failed(String)
+}
+
+nonisolated enum LibrarySortOrder: Sendable {
+    case newestFirst
+    case oldestFirst
+}
+
+nonisolated enum FolderDeletionMode: Sendable {
+    case keepDocuments
+    case deleteDocuments
+}
+
+nonisolated enum LibraryOperation: Hashable, Sendable {
+    case savingScan
+    case deletingDocuments
+    case creatingFolder
+    case renamingFolder
+    case movingDocuments
+    case deletingFolder
+}
+
+nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
+    case invalidFolderName
+    case folderNameTooLong
+    case duplicateFolderName
+    case missingFolder
+    case missingDocument
+    case missingFile(String)
+    case migrationFailed(String)
+    case storageFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFolderName:
+            "Folder names cannot be empty."
+        case .folderNameTooLong:
+            "Folder names must contain 80 characters or fewer."
+        case .duplicateFolderName:
+            "A folder with this name already exists."
+        case .missingFolder:
+            "The folder no longer exists."
+        case .missingDocument:
+            "The document no longer exists."
+        case .missingFile(let filename):
+            "The file \(filename) is missing from local storage."
+        case .migrationFailed(let message):
+            "The existing library could not be upgraded. \(message)"
+        case .storageFailed(let message):
+            message
+        }
+    }
+}
+
+nonisolated enum LibraryTextNormalizer {
+    /// Forces independently owned UTF-8 storage before a value crosses an async boundary.
+    nonisolated static func ownedCopy(_ value: String) -> String {
+        String(decoding: Array(value.utf8), as: UTF8.self)
+    }
+
+    nonisolated static func normalize(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased(with: .current)
+    }
+
+    nonisolated static func validatedFolderName(_ value: String) throws -> (display: String, normalized: String) {
+        let display = ownedCopy(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !display.isEmpty else { throw LibraryRepositoryError.invalidFolderName }
+        guard display.count <= 80 else { throw LibraryRepositoryError.folderNameTooLong }
+        return (display, normalize(display))
+    }
+}

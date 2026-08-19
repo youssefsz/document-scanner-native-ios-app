@@ -75,7 +75,13 @@ struct DocumentCard: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
-            .fill(backgroundColor)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: DocumentCardLayout.cardCornerRadius, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                }
+            }
     }
 
     private var cardBorder: some View {
@@ -94,16 +100,6 @@ struct DocumentCard: View {
         }
     }
 
-    private var backgroundColor: Color {
-        if isSelected {
-            Color.accentColor.opacity(0.12)
-        } else if isSelectionMode {
-            Color(.tertiarySystemGroupedBackground)
-        } else {
-            Color(.secondarySystemGroupedBackground)
-        }
-    }
-
     private var borderColor: Color {
         if isSelected {
             return Color.accentColor.opacity(0.9)
@@ -119,8 +115,11 @@ struct DocumentCard: View {
 
 }
 
-private struct DocumentThumbnail: View {
+struct DocumentThumbnail: View {
     let url: URL
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: ThumbnailPhase = .loading
 
     var body: some View {
         GeometryReader { proxy in
@@ -137,13 +136,19 @@ private struct DocumentThumbnail: View {
                         )
                     )
 
-                if let image = UIImage(contentsOfFile: url.path) {
+                switch phase {
+                case .loaded(let image):
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
-                } else {
+                        .transition(reduceMotion ? .identity : .opacity)
+                case .loading:
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Loading preview")
+                case .unavailable:
                     VStack(spacing: 10) {
                         Image(systemName: "doc.text.image")
                             .font(.system(size: 38))
@@ -157,10 +162,44 @@ private struct DocumentThumbnail: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+            .task(id: ThumbnailRequest(url: url, size: proxy.size)) {
+                phase = .loading
+                let image = await ThumbnailPipeline.shared.image(
+                    for: url,
+                    pointSize: proxy.size,
+                    scale: UIScreen.main.scale
+                )
+                guard !Task.isCancelled else { return }
+                if reduceMotion {
+                    phase = image.map(ThumbnailPhase.loaded) ?? .unavailable
+                } else {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        phase = image.map(ThumbnailPhase.loaded) ?? .unavailable
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous))
+    }
+}
+
+private enum ThumbnailPhase {
+    case loading
+    case loaded(UIImage)
+    case unavailable
+}
+
+private struct ThumbnailRequest: Equatable {
+    let url: URL
+    let width: Int
+    let height: Int
+
+    init(url: URL, size: CGSize) {
+        self.url = url
+        self.width = Int(size.width.rounded())
+        self.height = Int(size.height.rounded())
     }
 }
 
