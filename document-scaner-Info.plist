@@ -22,8 +22,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Use the camera to scan paper documents into PDFs.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to unlock secure folders.</string>
 	<key>AppStoreID</key>
 	<string>6760237829</string>
 	<key>UIApplicationSceneManifest</key>

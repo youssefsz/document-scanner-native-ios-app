@@ -12,8 +12,14 @@ nonisolated protocol LibraryRepository: Sendable {
     func renameDocument(id: UUID, title: String) async throws
     func deleteDocuments(ids: Set<UUID>) async throws
 
-    func createFolder(name: String) async throws -> DocumentFolder
+    func createFolder(name: String, security: FolderSecurity) async throws -> DocumentFolder
     func renameFolder(id: UUID, name: String) async throws
     func deleteFolder(id: UUID, mode: FolderDeletionMode) async throws
     func moveDocuments(ids: Set<UUID>, to folderID: UUID?) async throws
+}
+
+nonisolated extension LibraryRepository {
+    func createFolder(name: String) async throws -> DocumentFolder {
+        try await createFolder(name: name, security: .standard)
+    }
 }

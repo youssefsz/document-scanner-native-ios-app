@@ -10,6 +10,7 @@ import UIKit
 
 struct LibraryView: View {
     @EnvironmentObject private var library: DocumentLibrary
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -26,6 +27,10 @@ struct LibraryView: View {
     @State private var isShowingNewFolderSheet = false
     @State private var folderBeingRenamed: DocumentFolder?
     @State private var folderPendingDeletion: FolderSummary?
+    @State private var folderSecurityChange: FolderSecurityChangeRequest?
+    @State private var folderNavigationPath: [DocumentFolder] = []
+    @State private var authenticatingFolderID: UUID?
+    @State private var pendingSecureFolderNavigation: DocumentFolder?
     @State private var isDeletingFolder = false
     @State private var pendingScanPages: [UIImage] = []
     @State private var pendingScanTitle = ""
@@ -36,7 +41,7 @@ struct LibraryView: View {
     private let horizontalPadding: CGFloat = 16
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $folderNavigationPath) {
             GeometryReader { proxy in
                 let usesSingleColumn = proxy.size.width < 350 || dynamicTypeSize.isAccessibilitySize
                 let columnCount: CGFloat = usesSingleColumn ? 1 : 2
@@ -109,7 +114,12 @@ struct LibraryView: View {
                 }
                 .librarySearchable(enabled: library.mutationsEnabled, text: activeSearchText, prompt: searchPrompt)
                 .navigationDestination(for: DocumentFolder.self) { folder in
-                    FolderDetailView(folder: folder)
+                    SecureFolderGate(
+                        folder: folder,
+                        initialAccess: folder.isSecure
+                            ? library.activeSecureFolderAccess(for: folder.id)
+                            : nil
+                    )
                         .environmentObject(library)
                 }
             }
@@ -127,6 +137,9 @@ struct LibraryView: View {
         }
         .onChange(of: documentSortOrder) { value in
             library.updateSortOrder(rawValue: value)
+        }
+        .onChange(of: scenePhase) { phase in
+            handleScenePhase(phase)
         }
         .onChange(of: library.selectedSection) { section in
             if section == .folders { endSelectionMode() }
@@ -169,13 +182,24 @@ struct LibraryView: View {
             )
         }
         .sheet(isPresented: $isShowingNewFolderSheet) {
-            FolderNameSheet(
-                title: "New Folder",
-                actionTitle: "Create",
-                initialName: "",
+            NewFolderSheet(
                 validation: { library.folderNameValidationMessage($0) },
-                onSave: { name in
-                    await library.createFolder(name: name) ? nil : library.consumeActiveErrorMessage()
+                onSave: { name, security in
+                    let success = await library.createFolder(name: name, security: security)
+                    return (success, success ? nil : library.consumeActiveErrorMessage())
+                }
+            )
+        }
+        .sheet(item: $folderSecurityChange) { request in
+            FolderSecurityChangeSheet(
+                request: request,
+                progress: library.securityConversionProgress[request.folder.id],
+                onCancel: {
+                    library.cancelSecurityConversion(folderID: request.folder.id)
+                    folderSecurityChange = nil
+                },
+                onConfirm: {
+                    await library.changeFolderSecurity(request.folder, to: request.target)
                 }
             )
         }
@@ -380,15 +404,33 @@ struct LibraryView: View {
         } else {
             LazyVGrid(columns: columns, alignment: .center, spacing: gridSpacing) {
                 ForEach(library.folders) { summary in
-                    NavigationLink(value: summary.folder) {
-                        FolderCard(summary: summary)
+                    Button {
+                        openFolder(summary.folder)
+                    } label: {
+                        FolderCard(
+                            summary: summary,
+                            isAuthenticating: authenticatingFolderID == summary.id
+                        )
                     }
                     .buttonStyle(.plain)
+                    .disabled(authenticatingFolderID != nil)
                     .contextMenu {
                         Button {
                             folderBeingRenamed = summary.folder
                         } label: {
                             Label("Rename", systemImage: "pencil")
+                        }
+                        Button {
+                            folderSecurityChange = FolderSecurityChangeRequest(
+                                folder: summary.folder,
+                                documentCount: summary.documentCount,
+                                target: summary.folder.isSecure ? .standard : .secure
+                            )
+                        } label: {
+                            Label(
+                                summary.folder.isSecure ? "Remove Security" : "Make Secure",
+                                systemImage: summary.folder.isSecure ? "lock.open" : "lock.fill"
+                            )
                         }
                         Button(role: .destructive) {
                             folderPendingDeletion = summary
@@ -405,6 +447,64 @@ struct LibraryView: View {
             .padding(.bottom, 140)
             .transition(.opacity)
         }
+    }
+
+    private func openFolder(_ folder: DocumentFolder) {
+        guard authenticatingFolderID == nil else { return }
+        guard folder.isSecure else {
+            folderNavigationPath.append(folder)
+            return
+        }
+
+        authenticatingFolderID = folder.id
+        Task { @MainActor in
+            let access = await library.unlockSecureFolder(folder)
+            guard authenticatingFolderID == folder.id else {
+                if access?.isValid == true {
+                    library.lockSecureFolder(id: folder.id)
+                }
+                return
+            }
+            guard access?.isValid == true else {
+                authenticatingFolderID = nil
+                return
+            }
+
+            switch scenePhase {
+            case .active:
+                finishOpeningSecureFolder(folder)
+            case .inactive:
+                pendingSecureFolderNavigation = folder
+            case .background:
+                library.lockSecureFolder(id: folder.id)
+                authenticatingFolderID = nil
+            @unknown default:
+                library.lockSecureFolder(id: folder.id)
+                authenticatingFolderID = nil
+            }
+        }
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        if phase == .background {
+            pendingSecureFolderNavigation = nil
+            authenticatingFolderID = nil
+            return
+        }
+
+        guard phase == .active, let folder = pendingSecureFolderNavigation else { return }
+        guard library.activeSecureFolderAccess(for: folder.id)?.isValid == true else {
+            pendingSecureFolderNavigation = nil
+            authenticatingFolderID = nil
+            return
+        }
+        finishOpeningSecureFolder(folder)
+    }
+
+    private func finishOpeningSecureFolder(_ folder: DocumentFolder) {
+        pendingSecureFolderNavigation = nil
+        authenticatingFolderID = nil
+        folderNavigationPath.append(folder)
     }
 
     private func searchLoadingState(title: String) -> some View {
@@ -955,6 +1055,7 @@ private struct LibrarySelectionBar: View {
 
 private struct FolderCard: View {
     let summary: FolderSummary
+    var isAuthenticating = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -963,7 +1064,22 @@ private struct FolderCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if summary.newestDocuments.isEmpty {
+            if summary.folder.isSecure {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.regularMaterial)
+                    if isAuthenticating {
+                        ProgressView()
+                            .controlSize(.regular)
+                            .accessibilityLabel("Authenticating")
+                    } else {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 42, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(height: 142)
+            } else if summary.newestDocuments.isEmpty {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Color(.tertiarySystemFill))
@@ -989,10 +1105,18 @@ private struct FolderCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(summary.folder.name)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(summary.folder.name)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if summary.folder.isSecure {
+                        Image(systemName: "lock.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
                 Text("\(summary.documentCount) document\(summary.documentCount == 1 ? "" : "s")")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1005,8 +1129,193 @@ private struct FolderCard: View {
                 .strokeBorder(Color(uiColor: .separator).opacity(0.22), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(summary.folder.name), \(summary.documentCount) documents")
+        .accessibilityLabel("\(summary.folder.name), \(summary.documentCount) documents\(summary.folder.isSecure ? ", Secure" : "")")
         .accessibilityHint("Opens folder")
+    }
+}
+
+private struct NewFolderSheet: View {
+    let validation: @MainActor (String) -> String?
+    let onSave: @MainActor (String, FolderSecurity) async -> (success: Bool, error: String?)
+
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isFocused: Bool
+    @State private var name = ""
+    @State private var isSecure = false
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var showsLearnMore = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Folder Name", text: $name)
+                        .focused($isFocused)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                }
+
+                Section {
+                    Toggle(isOn: $isSecure) {
+                        Label("Secure Folder", systemImage: "lock.fill")
+                    }
+                    .disabled(isSaving)
+
+                    if isSecure {
+                        Button("Learn More") { showsLearnMore = true }
+                    }
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text("Use Face ID, Touch ID, or the device passcode to open this folder. Its documents are encrypted on this device.")
+                }
+
+                if let message = saveError ?? validation(name), !message.isEmpty, !name.isEmpty {
+                    Section {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("New Folder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: save) {
+                        if isSaving {
+                            AppToolbarProgressView(accessibilityLabel: "Creating folder")
+                        } else {
+                            Text("Create")
+                        }
+                    }
+                    .disabled(validation(name) != nil || isSaving)
+                }
+            }
+            .alert("About Secure Folders", isPresented: $showsLearnMore) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Secure folders are protected on this device. Keep another copy of important documents. If the app is deleted or the device is lost without a backup, these documents may not be recoverable.")
+            }
+        }
+        .interactiveDismissDisabled(isSaving)
+        .task {
+            isSecure = false
+            isFocused = true
+        }
+        .onChange(of: name) { _ in saveError = nil }
+    }
+
+    private func save() {
+        let submittedName = LibraryTextNormalizer.ownedCopy(name)
+        let security: FolderSecurity = isSecure ? .secure : .standard
+        guard validation(submittedName) == nil, !isSaving else { return }
+        isSaving = true
+        Task { @MainActor [submittedName, security] in
+            let result = await onSave(submittedName, security)
+            isSaving = false
+            saveError = result.error
+            if result.success { dismiss() }
+        }
+    }
+}
+
+private struct FolderSecurityChangeRequest: Identifiable {
+    let folder: DocumentFolder
+    let documentCount: Int
+    let target: FolderSecurity
+
+    var id: String { "\(folder.id.uuidString)-\(target.rawValue)" }
+}
+
+private struct FolderSecurityChangeSheet: View {
+    let request: FolderSecurityChangeRequest
+    let progress: SecurityConversionProgress?
+    let onCancel: () -> Void
+    let onConfirm: @MainActor () async -> Bool
+
+    @State private var isWorking = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Folder", value: request.folder.name)
+                    LabeledContent("Documents", value: "\(request.documentCount)")
+                }
+
+                Section {
+                    if let progress {
+                        ProgressView(
+                            value: Double(progress.completedDocuments),
+                            total: Double(max(progress.totalDocuments, 1))
+                        )
+                        Text(progressLabel(progress))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(explanation)
+                    }
+                }
+            }
+            .navigationTitle(request.target == .secure ? "Make Secure" : "Remove Security")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                        .disabled(isCriticalPhase)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(request.target == .secure ? "Make Secure" : "Remove Security", action: confirm)
+                        .disabled(isWorking)
+                }
+            }
+        }
+        .interactiveDismissDisabled(isCriticalPhase)
+    }
+
+    private var explanation: String {
+        if request.target == .secure {
+            return "The app will encrypt every PDF, preview, and document title in this folder."
+        }
+        return "Documents will stay in this folder and become available without authentication."
+    }
+
+    private var isCriticalPhase: Bool {
+        guard let phase = progress?.phase else { return false }
+        return [.preservingOriginals, .installing, .committingMetadata, .cleaningUp].contains(phase)
+    }
+
+    private func progressLabel(_ progress: SecurityConversionProgress) -> String {
+        "\(progress.phase.label) \(progress.completedDocuments) of \(progress.totalDocuments) documents"
+    }
+
+    private func confirm() {
+        guard !isWorking else { return }
+        isWorking = true
+        Task { @MainActor in
+            let success = await onConfirm()
+            isWorking = false
+            if success { onCancel() }
+        }
+    }
+}
+
+private extension SecurityConversionPhase {
+    var label: String {
+        switch self {
+        case .staging: "Preparing"
+        case .verifying: "Verifying"
+        case .preservingOriginals: "Preserving originals"
+        case .installing: "Installing files"
+        case .committingMetadata: "Updating library"
+        case .cleaningUp: "Cleaning up"
+        }
     }
 }
 
@@ -1103,6 +1412,7 @@ private struct FolderPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var showsNewFolder = false
+    @State private var pendingSecureDestination: DocumentFolder?
 
     var body: some View {
         NavigationStack {
@@ -1113,7 +1423,12 @@ private struct FolderPickerSheet: View {
 
                 Section("Folders") {
                     ForEach(folders.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) { folder in
-                        destinationRow(name: folder.name, systemImage: "folder", id: folder.id)
+                        destinationRow(
+                            name: folder.name,
+                            systemImage: folder.isSecure ? "lock.fill" : "folder",
+                            id: folder.id,
+                            isSecure: folder.isSecure
+                        )
                     }
                     Button {
                         showsNewFolder = true
@@ -1132,6 +1447,23 @@ private struct FolderPickerSheet: View {
             }
         }
         .interactiveDismissDisabled(isMoving)
+        .confirmationDialog(
+            "Move and Secure?",
+            isPresented: Binding(
+                get: { pendingSecureDestination != nil },
+                set: { if !$0 { pendingSecureDestination = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Move and Secure") {
+                guard let destination = pendingSecureDestination else { return }
+                pendingSecureDestination = nil
+                onMove(destination.id)
+            }
+            Button("Cancel", role: .cancel) { pendingSecureDestination = nil }
+        } message: {
+            Text("The selected documents will be encrypted and moved into \(pendingSecureDestination?.name ?? "the secure folder").")
+        }
         .sheet(isPresented: $showsNewFolder) {
             FolderNameSheet(
                 title: "New Folder",
@@ -1152,9 +1484,18 @@ private struct FolderPickerSheet: View {
         }
     }
 
-    private func destinationRow(name: String, systemImage: String, id: UUID?) -> some View {
+    private func destinationRow(
+        name: String,
+        systemImage: String,
+        id: UUID?,
+        isSecure: Bool = false
+    ) -> some View {
         Button {
-            onMove(id)
+            if isSecure, let id, let folder = folders.first(where: { $0.id == id }) {
+                pendingSecureDestination = folder
+            } else {
+                onMove(id)
+            }
         } label: {
             HStack {
                 Label(name, systemImage: systemImage)
@@ -1347,6 +1688,565 @@ private struct AddDocumentsToFolderSheet: View {
             isAdding = false
             if addError == nil { dismiss() }
         }
+    }
+}
+
+private struct SecureFolderGate: View {
+    let folder: DocumentFolder
+
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var library: DocumentLibrary
+    @State private var access: VaultAccess?
+    @State private var isAuthenticating = false
+    @State private var pendingAccess: VaultAccess?
+    @State private var isAwaitingActiveSceneAfterAuthentication = false
+    @State private var isPresentingChildFlow = false
+
+    init(folder: DocumentFolder, initialAccess: VaultAccess? = nil) {
+        self.folder = folder
+        _access = State(initialValue: initialAccess)
+    }
+
+    var body: some View {
+        Group {
+            if !folder.isSecure {
+                FolderDetailView(folder: folder)
+            } else if let access, access.isValid, scenePhase == .active {
+                SecureFolderDetailView(
+                    folder: folder,
+                    access: access,
+                    isPresentingChildFlow: $isPresentingChildFlow
+                )
+                    .privacySensitive()
+            } else {
+                lockedState
+            }
+        }
+        .overlay {
+            if folder.isSecure, scenePhase == .background {
+                Color(.systemBackground).ignoresSafeArea()
+            }
+        }
+        .task {
+            guard folder.isSecure, access == nil else { return }
+            await unlock()
+        }
+        .onChange(of: scenePhase) { phase in
+            handleScenePhase(phase)
+        }
+        .onDisappear {
+            guard folder.isSecure, !isPresentingChildFlow else { return }
+            library.lockSecureFolder(id: folder.id)
+            access = nil
+        }
+    }
+
+    private var lockedState: some View {
+        VStack(spacing: 14) {
+            if isAuthenticating {
+                ProgressView()
+                    .controlSize(.regular)
+                    .accessibilityLabel("Authenticating")
+            }
+
+            Text(isAuthenticating ? "Unlocking..." : "Folder locked")
+                .font(.headline)
+
+            Text("Authenticate to view this folder's documents.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if !isAuthenticating {
+                Button("Unlock") {
+                    Task { await unlock() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .accessibilityLabel("Unlock \(folder.name)")
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(folder.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .animation(.easeInOut(duration: 0.2), value: isAuthenticating)
+    }
+
+    private func shouldLock(for phase: ScenePhase) -> Bool {
+        guard folder.isSecure else { return false }
+        if phase == .background { return true }
+        return phase == .inactive && !isAuthenticating && !library.isAuthenticatingSecureContent
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        if phase == .active, isAwaitingActiveSceneAfterAuthentication {
+            access = pendingAccess
+            pendingAccess = nil
+            isAwaitingActiveSceneAfterAuthentication = false
+            isAuthenticating = false
+            return
+        }
+
+        guard shouldLock(for: phase) else { return }
+        pendingAccess = nil
+        isAwaitingActiveSceneAfterAuthentication = false
+        isAuthenticating = false
+        access = nil
+    }
+
+    private func unlock() async {
+        guard !isAuthenticating, scenePhase == .active else { return }
+        isAuthenticating = true
+        await Task.yield()
+
+        let unlockedAccess = await library.unlockSecureFolder(folder)
+        switch scenePhase {
+        case .active:
+            access = unlockedAccess
+            isAuthenticating = false
+        case .inactive:
+            pendingAccess = unlockedAccess
+            isAwaitingActiveSceneAfterAuthentication = true
+        case .background:
+            library.lockSecureFolder(id: folder.id)
+            isAuthenticating = false
+        @unknown default:
+            library.lockSecureFolder(id: folder.id)
+            isAuthenticating = false
+        }
+    }
+}
+
+private struct SecureFolderDetailView: View {
+    let folder: DocumentFolder
+    let access: VaultAccess
+    @Binding var isPresentingChildFlow: Bool
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @EnvironmentObject private var library: DocumentLibrary
+    @State private var documents: [ScannedDocument] = []
+    @State private var query = ""
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    @State private var selectedDocument: ScannedDocument?
+    @State private var selectedDocumentIDs: Set<UUID> = []
+    @State private var isSelectionMode = false
+    @State private var showsMove = false
+    @State private var showsDelete = false
+    @State private var isMoving = false
+    @State private var isDeleting = false
+    @State private var showsAddDocuments = false
+    @State private var isScannerPresented = false
+    @State private var isNamingPendingScan = false
+    @State private var isSavingPendingScan = false
+    @State private var pendingScanPages: [UIImage] = []
+    @State private var pendingScanTitle = ""
+
+    var body: some View {
+        ScrollView {
+            if isLoading {
+                ProgressView("Opening secure folder...")
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 100)
+                    .transition(contentTransition)
+            } else if let errorMessage {
+                AppUnavailableStateView(
+                    title: "Secure Folder Unavailable",
+                    systemImage: "lock.trianglebadge.exclamationmark",
+                    description: errorMessage
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 80)
+                .transition(contentTransition)
+            } else if filteredDocuments.isEmpty {
+                AppUnavailableStateView(
+                    title: query.isEmpty ? "Folder Is Empty" : "No Results",
+                    systemImage: query.isEmpty ? "lock.doc" : "magnifyingglass",
+                    description: query.isEmpty ? "This secure folder has no documents." : "No document titles match your search."
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 80)
+                .transition(contentTransition)
+            } else {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(filteredDocuments) { document in
+                        SecureDocumentCard(document: document, access: access)
+                            .onTapGesture { handleTap(document) }
+                            .onLongPressGesture(minimumDuration: 0.35) { beginSelection(document) }
+                            .accessibilityAddTraits(.isButton)
+                    }
+                }
+                .padding(16)
+                .padding(.bottom, 40)
+                .transition(contentTransition)
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+        .animation(contentAnimation, value: isLoading)
+        .animation(contentAnimation, value: errorMessage)
+        .animation(contentAnimation, value: documents.map(\.id))
+        .navigationTitle(isSelectionMode ? "\(selectedDocumentIDs.count) Selected" : folder.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Search document titles")
+        .toolbar {
+            if isSelectionMode {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel", action: endSelection)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(selectedDocumentIDs.count == documents.count ? "Deselect All" : "Select All") {
+                        if selectedDocumentIDs.count == documents.count {
+                            endSelection()
+                        } else {
+                            selectedDocumentIDs = Set(documents.map(\.id))
+                        }
+                    }
+                }
+            } else {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button("Scan into Folder", systemImage: "document.viewfinder") {
+                            openScanner()
+                        }
+                        Button("Add Existing Documents", systemImage: "doc.badge.plus") {
+                            showsAddDocuments = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Secure Folder Actions")
+                }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if isSelectionMode {
+                LibrarySelectionBar(
+                    selectionCount: selectedDocumentIDs.count,
+                    isDeleting: isDeleting,
+                    isMoving: isMoving,
+                    moveAction: { showsMove = true },
+                    deleteAction: { showsDelete = true }
+                )
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+        }
+        .task(id: access.sessionID) { await loadDocuments() }
+        .fullScreenCover(item: $selectedDocument, onDismiss: {
+            isPresentingChildFlow = false
+            Task { await loadDocuments() }
+        }) { document in
+            DocumentDetailView(document: document, secureAccess: access)
+                .environmentObject(library)
+        }
+        .sheet(isPresented: $showsMove) {
+            FolderPickerSheet(
+                folders: library.allFolders.map(\.folder),
+                commonFolderID: folder.id,
+                hasCommonFolder: true,
+                isMoving: isMoving,
+                onCreateFolder: { name in
+                    await library.createFolder(name: name) ? nil : library.consumeActiveErrorMessage()
+                },
+                onMove: moveSelection
+            )
+        }
+        .sheet(isPresented: $showsAddDocuments) {
+            AddDocumentsToFolderSheet(
+                documents: library.allDocuments,
+                folderName: folder.name,
+                folderNamesByID: Dictionary(
+                    uniqueKeysWithValues: library.allFolders.map { ($0.id, $0.folder.name) }
+                ),
+                onAdd: addExistingDocuments
+            )
+        }
+        .sheet(isPresented: $isScannerPresented) {
+            DocumentScannerSheet(
+                onComplete: { pages in
+                    isScannerPresented = false
+                    pendingScanPages = pages
+                    pendingScanTitle = DocumentTitleFormatter.default(for: .now)
+                    Task { @MainActor in
+                        await Task.yield()
+                        isNamingPendingScan = true
+                    }
+                },
+                onCancel: { isScannerPresented = false },
+                onError: { error in
+                    isScannerPresented = false
+                    library.activeError = LibraryError(message: error.localizedDescription)
+                }
+            )
+            .ignoresSafeArea()
+            .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $isNamingPendingScan) {
+            DocumentTitleEditorSheet(
+                title: "Name Document",
+                message: "Choose a title before saving this scan to \(folder.name).",
+                saveButtonTitle: "Save to Secure Folder",
+                cancelButtonTitle: "Discard",
+                isSaving: isSavingPendingScan,
+                allowsInteractiveDismiss: false,
+                documentTitle: $pendingScanTitle,
+                onCancel: {
+                    pendingScanPages = []
+                    pendingScanTitle = ""
+                    isNamingPendingScan = false
+                },
+                onSave: saveSecureScan
+            )
+        }
+        .confirmationDialog(
+            selectedDocumentIDs.count == 1 ? "Delete 1 secure document?" : "Delete \(selectedDocumentIDs.count) secure documents?",
+            isPresented: $showsDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Documents", role: .destructive, action: deleteSelection)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the encrypted PDFs, previews, and titles from this device.")
+        }
+        .onDisappear { query = "" }
+    }
+
+    private var filteredDocuments: [ScannedDocument] {
+        let normalized = LibraryTextNormalizer.normalize(query)
+        guard !normalized.isEmpty else { return documents }
+        return documents.filter { LibraryTextNormalizer.normalize($0.title).contains(normalized) }
+    }
+
+    private var columns: [GridItem] {
+        let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
+        return Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: count)
+    }
+
+    private var contentAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: 0.2)
+    }
+
+    private var contentTransition: AnyTransition {
+        accessibilityReduceMotion ? .identity : .opacity
+    }
+
+    private func loadDocuments() async {
+        do {
+            documents = try await library.secureFolderDocuments(folderID: folder.id, access: access)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func handleTap(_ document: ScannedDocument) {
+        if isSelectionMode {
+            toggleSelection(document)
+        } else {
+            isPresentingChildFlow = true
+            selectedDocument = document
+        }
+    }
+
+    private func beginSelection(_ document: ScannedDocument) {
+        guard !isSelectionMode else {
+            toggleSelection(document)
+            return
+        }
+        isSelectionMode = true
+        selectedDocumentIDs = [document.id]
+        Haptics.selectionChanged()
+    }
+
+    private func toggleSelection(_ document: ScannedDocument) {
+        if selectedDocumentIDs.contains(document.id) {
+            selectedDocumentIDs.remove(document.id)
+        } else {
+            selectedDocumentIDs.insert(document.id)
+        }
+        isSelectionMode = !selectedDocumentIDs.isEmpty
+        Haptics.selectionChanged()
+    }
+
+    private func endSelection() {
+        selectedDocumentIDs.removeAll()
+        isSelectionMode = false
+    }
+
+    private func moveSelection(to destinationID: UUID?) {
+        let ids = selectedDocumentIDs
+        Task {
+            isMoving = true
+            let success = await library.moveSecureDocuments(
+                ids: ids,
+                from: folder.id,
+                to: destinationID,
+                access: access
+            )
+            isMoving = false
+            if success {
+                showsMove = false
+                endSelection()
+                await loadDocuments()
+            }
+        }
+    }
+
+    private func deleteSelection() {
+        let selected = documents.filter { selectedDocumentIDs.contains($0.id) }
+        Task {
+            isDeleting = true
+            let success = await library.deleteSecure(selected, access: access)
+            isDeleting = false
+            if success {
+                endSelection()
+                await loadDocuments()
+            }
+        }
+    }
+
+    private func addExistingDocuments(_ ids: Set<UUID>) async -> String? {
+        let success = await library.addNormalDocumentsToSecure(
+            ids: ids,
+            destination: folder,
+            access: access
+        )
+        if success {
+            await loadDocuments()
+            return nil
+        }
+        return library.consumeActiveErrorMessage()
+    }
+
+    private func openScanner() {
+        guard DocumentScannerSheet.isSupported else {
+            library.activeError = LibraryError(message: "Document scanning requires a physical iPhone or iPad with camera access.")
+            return
+        }
+        isScannerPresented = true
+    }
+
+    private func saveSecureScan() {
+        let pages = pendingScanPages
+        let title = pendingScanTitle
+        guard !pages.isEmpty, !isSavingPendingScan else { return }
+        isSavingPendingScan = true
+        Task {
+            let success = await library.importSecureScan(
+                pages: pages,
+                title: title,
+                destination: folder,
+                access: access
+            )
+            isSavingPendingScan = false
+            if success {
+                pendingScanPages = []
+                pendingScanTitle = ""
+                isNamingPendingScan = false
+                await loadDocuments()
+                Haptics.success()
+            }
+        }
+    }
+}
+
+private struct SecureDocumentCard: View {
+    let document: ScannedDocument
+    let access: VaultAccess
+
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @EnvironmentObject private var library: DocumentLibrary
+    @State private var image: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GeometryReader { proxy in
+                ZStack {
+                    RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous)
+                        .fill(Color(.tertiarySystemFill))
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .transition(accessibilityReduceMotion ? .identity : .opacity)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .task(id: SecureThumbnailRequest(documentID: document.id, size: proxy.size)) {
+                    await loadImage(size: proxy.size)
+                }
+            }
+            .frame(height: DocumentCardLayout.thumbnailHeight)
+            .clipShape(RoundedRectangle(cornerRadius: DocumentCardLayout.thumbnailCornerRadius, style: .continuous))
+
+            Text(document.title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+            Text("\(document.pageCount) page\(document.pageCount == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(minHeight: DocumentCardLayout.totalCardHeight, alignment: .top)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(document.title), secure document")
+    }
+
+    private func loadImage(size: CGSize) async {
+        let scale = UIScreen.main.scale
+        if let cached = await SecureThumbnailPipeline.shared.cachedImage(
+            documentID: document.id,
+            sessionID: access.sessionID,
+            pointSize: size,
+            scale: scale
+        ) {
+            setImage(cached)
+            return
+        }
+        guard let data = try? await library.secureAssetData(for: document, kind: .preview, access: access) else { return }
+        let loadedImage = await SecureThumbnailPipeline.shared.image(
+            from: data,
+            documentID: document.id,
+            sessionID: access.sessionID,
+            pointSize: size,
+            scale: scale
+        )
+        guard !Task.isCancelled else { return }
+        setImage(loadedImage)
+    }
+
+    private func setImage(_ newImage: UIImage?) {
+        if accessibilityReduceMotion {
+            image = newImage
+        } else {
+            withAnimation(.easeOut(duration: 0.18)) {
+                image = newImage
+            }
+        }
+    }
+}
+
+private struct SecureThumbnailRequest: Equatable {
+    let documentID: UUID
+    let width: Int
+    let height: Int
+
+    init(documentID: UUID, size: CGSize) {
+        self.documentID = documentID
+        width = Int(size.width.rounded())
+        height = Int(size.height.rounded())
     }
 }
 

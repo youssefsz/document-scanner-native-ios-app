@@ -13,6 +13,41 @@ nonisolated struct DocumentFolder: Identifiable, Hashable, Sendable {
     let normalizedName: String
     let createdAt: Date
     let updatedAt: Date
+    let security: FolderSecurity
+
+    nonisolated init(
+        id: UUID,
+        name: String,
+        normalizedName: String,
+        createdAt: Date,
+        updatedAt: Date,
+        security: FolderSecurity = .standard
+    ) {
+        self.id = id
+        self.name = name
+        self.normalizedName = normalizedName
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.security = security
+    }
+
+    var isSecure: Bool { security == .secure }
+}
+
+nonisolated enum FolderSecurity: Int16, Codable, Hashable, Sendable {
+    case standard = 0
+    case secure = 1
+}
+
+nonisolated enum DocumentProtection: Int16, Codable, Hashable, Sendable {
+    case standard = 0
+    case vaultV1 = 1
+}
+
+nonisolated enum VaultAssetKind: UInt8, Codable, Hashable, Sendable {
+    case pdf = 1
+    case preview = 2
+    case title = 3
 }
 
 nonisolated struct FolderSummary: Identifiable, Hashable, Sendable {
@@ -55,6 +90,7 @@ nonisolated enum LibraryOperation: Hashable, Sendable {
     case renamingFolder
     case movingDocuments
     case deletingFolder
+    case changingFolderSecurity
 }
 
 nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
@@ -66,6 +102,8 @@ nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
     case missingFile(String)
     case migrationFailed(String)
     case storageFailed(String)
+    case secureAccessRequired
+    case invalidSecurityState
 
     var errorDescription: String? {
         switch self {
@@ -85,6 +123,10 @@ nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
             "The existing library could not be upgraded. \(message)"
         case .storageFailed(let message):
             message
+        case .secureAccessRequired:
+            "Unlock the secure folder to continue."
+        case .invalidSecurityState:
+            "The document security state is inconsistent."
         }
     }
 }

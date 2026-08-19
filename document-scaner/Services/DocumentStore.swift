@@ -25,6 +25,13 @@ enum DocumentStoreError: LocalizedError {
     }
 }
 
+nonisolated struct PreparedSecureScan: Sendable {
+    let document: ScannedDocument
+    let sourcePDFURL: URL
+    let sourcePreviewURL: URL
+    let operationDirectory: URL
+}
+
 actor DocumentStore {
     private let fileManager = FileManager.default
     private let repository: any LibraryRepository
@@ -135,7 +142,71 @@ actor DocumentStore {
         }
     }
 
+    func prepareSecureScan(
+        pages: [UIImage],
+        title: String,
+        folderID: UUID
+    ) async throws -> PreparedSecureScan {
+        guard let firstPage = pages.first else { throw DocumentStoreError.emptyScan }
+        try prepareStorage()
+        let timestamp = Date()
+        let id = UUID()
+        let operationDirectory = paths.sensitiveTemporaryDirectory
+            .appendingPathComponent("SecureScan-\(id.uuidString.lowercased())", isDirectory: true)
+        try fileManager.createDirectory(
+            at: operationDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        let pdfURL = operationDirectory.appendingPathComponent("source.pdf")
+        let previewURL = operationDirectory.appendingPathComponent("source-preview.jpg")
+
+        do {
+            let pageContents = try await makePageContents(from: pages)
+            let previewData = try makePreview(from: firstPage)
+            _ = try await writeMasterPDF(
+                pageContents: pageContents,
+                destinationURL: pdfURL,
+                replacingExistingFile: false,
+                allowImageOnlyFallback: true,
+                sensitiveTemporaryDirectory: operationDirectory
+            )
+            try previewData.write(to: previewURL, options: [.atomic, .completeFileProtection])
+            try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: pdfURL.path)
+            guard PDFDocument(url: pdfURL)?.pageCount == pages.count,
+                  UIImage(contentsOfFile: previewURL.path) != nil else {
+                throw DocumentStoreError.pdfCreationFailed
+            }
+            let document = ScannedDocument(
+                id: id,
+                title: DocumentTitleFormatter.sanitized(title, fallbackDate: timestamp),
+                createdAt: timestamp,
+                pageCount: pages.count,
+                pdfFilename: "source.pdf",
+                previewFilename: "source-preview.jpg",
+                folderID: folderID
+            )
+            return PreparedSecureScan(
+                document: document,
+                sourcePDFURL: pdfURL,
+                sourcePreviewURL: previewURL,
+                operationDirectory: operationDirectory
+            )
+        } catch {
+            try? fileManager.removeItem(at: operationDirectory)
+            throw error
+        }
+    }
+
+    func discardPreparedSecureScan(_ scan: PreparedSecureScan) {
+        try? fileManager.removeItem(at: scan.operationDirectory)
+    }
+
     func ensureSearchablePDFIfNeeded(for document: ScannedDocument) async -> Bool {
+        guard !document.isSecure else {
+            return false
+        }
+
         let sourceURL = document.pdfURL(in: paths)
 
         do {
@@ -209,9 +280,10 @@ actor DocumentStore {
         pageContents: [ScanPageContent],
         destinationURL: URL,
         replacingExistingFile: Bool,
-        allowImageOnlyFallback: Bool
+        allowImageOnlyFallback: Bool,
+        sensitiveTemporaryDirectory: URL? = nil
     ) async throws -> Bool {
-        let temporaryURL = temporaryPDFURL()
+        let temporaryURL = temporaryPDFURL(in: sensitiveTemporaryDirectory)
         let imageOnlyPageContents = pageContents.map { $0.imageOnly }
 
         try fileManager.createDirectory(
@@ -315,9 +387,9 @@ actor DocumentStore {
         }
     }
 
-    private func temporaryPDFURL() -> URL {
-        fileManager.temporaryDirectory
-            .appendingPathComponent("DocumentLibrary", isDirectory: true)
+    private func temporaryPDFURL(in sensitiveDirectory: URL? = nil) -> URL {
+        (sensitiveDirectory ?? fileManager.temporaryDirectory
+            .appendingPathComponent("DocumentLibrary", isDirectory: true))
             .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: false)
             .appendingPathExtension("pdf")
     }

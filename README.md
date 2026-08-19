@@ -19,6 +19,9 @@ document-scanner-native-ios-app is a local first iOS app for capturing paper doc
 - Choose PDF export quality before sharing with Low, Medium, High, and Very High presets
 - See the expected shared file size before exporting a document
 - Preserve selectable and searchable text in exported PDFs when OCR is available
+- Protect multiple folders with Face ID, Touch ID, or the device passcode
+- Encrypt secure-folder titles, PDFs, and previews on-device
+- Create optional password-protected PDF copies for sharing
 - Control sort order, export quality, delete confirmation, and appearance preferences
 - Choose OCR language preferences for offline text recognition
 - Keep the experience local first with no account system or cloud sync
@@ -72,7 +75,9 @@ Note: the simulator can build and preview the interface, but document capture re
 
 ## Privacy
 
-This project follows a local first approach. Scanned PDFs, preview images, OCR processing, and metadata stay on the device. The app does not require user accounts or upload documents to a backend service.
+This project follows a local first approach. Scanned PDFs, preview images, OCR processing, secure-folder encryption, and PDF export encryption happen on-device. The app does not require user accounts or upload documents to a backend service.
+
+Secure folders use Apple system authentication and operating-system cryptography. Keep another copy of important documents: deleting the app or losing a device without a backup can make secure documents unrecoverable. Password protection applies only to the exported copy and does not change the saved master PDF.
 
 ## Recent Updates
 

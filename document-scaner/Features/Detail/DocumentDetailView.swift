@@ -9,14 +9,23 @@ import PDFKit
 import StoreKit
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct DocumentDetailView: View {
     let document: ScannedDocument
+    var secureAccess: VaultAccess?
+
+    init(document: ScannedDocument, secureAccess: VaultAccess? = nil) {
+        self.document = document
+        self.secureAccess = secureAccess
+        _secureTitleOverride = State(initialValue: document.isSecure ? document.title : nil)
+    }
 
     @AppStorage(AppPreferenceKey.confirmBeforeDelete) private var confirmBeforeDelete = true
     @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
     @Environment(\.dismiss) private var dismiss
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var library: DocumentLibrary
 
     @State private var currentPageID: Int?
@@ -31,13 +40,17 @@ struct DocumentDetailView: View {
     @State private var exportPreviewErrors: [DocumentExportQuality: String] = [:]
     @State private var exportPreviewLoadingQualities: Set<DocumentExportQuality> = []
     @State private var exportPreparationTasks: [DocumentExportQuality: Task<Void, Never>] = [:]
+    @State private var exportPasswords: PDFPasswordPair?
+    @State private var isExportPasswordRevealed = false
     @State private var pendingShareQuality: DocumentExportQuality?
     @State private var pendingSharePresentation = false
     @State private var preparedExports: [DocumentExportQuality: PreparedDocumentExport] = [:]
     @State private var previewErrorMessage: String?
     @State private var renderedPages: [DocumentPageSnapshot] = []
+    @State private var requiresExportPassword = false
     @State private var selectedExportQuality = DocumentExportQuality.high
     @State private var shareItems: [Any] = []
+    @State private var secureTitleOverride: String?
     @State private var stagedTitle = ""
     @State private var showsControls = true
     @State private var zoomedPageID: Int?
@@ -56,10 +69,14 @@ struct DocumentDetailView: View {
             if isDeleting {
                 deletingOverlay
             }
+
+            if currentDocument.isSecure, scenePhase != .active {
+                Color.black.ignoresSafeArea()
+            }
         }
         .preferredColorScheme(.dark)
         .task(id: document.id) {
-            loadPages()
+            await loadPages()
             await requestNativeReviewIfNeeded()
         }
         .confirmationDialog("Delete this document?", isPresented: $isShowingDeleteConfirmation, titleVisibility: .visible) {
@@ -74,15 +91,21 @@ struct DocumentDetailView: View {
         .sheet(isPresented: $isShowingExportSheet, onDismiss: presentPreparedShareIfNeeded) {
             DocumentExportSheet(
                 selectedQuality: $selectedExportQuality,
-                originalFileSize: DocumentFileSizeFormatter.string(for: currentDocument.pdfURL),
+                originalFileSize: currentDocument.isSecure ? nil : DocumentFileSizeFormatter.string(for: currentDocument.pdfURL),
                 preparedExports: preparedExports,
                 loadingQualities: exportPreviewLoadingQualities,
                 isPreparingShare: isPreparingShare,
                 exportErrorMessage: selectedExportPreviewError,
+                requiresPassword: $requiresExportPassword,
+                passwords: exportPasswords,
+                isPasswordRevealed: $isExportPasswordRevealed,
+                sourceIsSecure: currentDocument.isSecure,
                 onCancel: {
                     isShowingExportSheet = false
                 },
                 onSelectionChange: ensurePreparedExport,
+                onCopyPassword: copyExportPassword,
+                onGeneratePassword: generateExportPasswords,
                 onShare: {
                     prepareShare(using: selectedExportQuality)
                 }
@@ -93,7 +116,9 @@ struct DocumentDetailView: View {
             isPreparingShare = false
             cleanupPreparedExports()
         }) {
-            ActivityShareSheet(activityItems: shareItems)
+            ActivityShareSheet(activityItems: shareItems) {
+                isShowingShareSheet = false
+            }
         }
         .sheet(isPresented: $isShowingRenameSheet) {
             DocumentTitleEditorSheet(
@@ -112,6 +137,12 @@ struct DocumentDetailView: View {
         .onDisappear {
             guard !isShowingShareSheet, !pendingSharePresentation else { return }
             cleanupPreparedExports()
+        }
+        .onChange(of: scenePhase) { phase in
+            guard currentDocument.isSecure, phase != .active else { return }
+            renderedPages = []
+            shareItems = []
+            dismiss()
         }
     }
 
@@ -287,7 +318,12 @@ struct DocumentDetailView: View {
     }
 
     private var currentDocument: ScannedDocument {
-        library.allDocuments.first(where: { $0.id == document.id }) ?? document
+        if document.isSecure {
+            var updated = document
+            updated.title = secureTitleOverride ?? document.title
+            return updated
+        }
+        return library.allDocuments.first(where: { $0.id == document.id }) ?? document
     }
 
     private func toggleControls() {
@@ -300,10 +336,16 @@ struct DocumentDetailView: View {
         Task {
             guard !isDeleting else { return }
             isDeleting = true
-            await library.delete(currentDocument)
+            let didDelete: Bool
+            if currentDocument.isSecure, let secureAccess {
+                didDelete = await library.deleteSecure(currentDocument, access: secureAccess)
+            } else {
+                await library.delete(currentDocument)
+                didDelete = library.activeError == nil
+            }
             isDeleting = false
 
-            if library.activeError == nil {
+            if didDelete {
                 dismiss()
             }
         }
@@ -313,6 +355,14 @@ struct DocumentDetailView: View {
         guard !isPreparingShare, !isDeleting, !isRenaming else { return }
         selectedExportQuality = preferredExportQuality
         pendingShareQuality = nil
+        requiresExportPassword = currentDocument.isSecure
+        isExportPasswordRevealed = false
+        do {
+            exportPasswords = try PDFPasswordGenerator().generate()
+        } catch {
+            library.activeError = LibraryError(message: error.localizedDescription)
+            return
+        }
         isShowingExportSheet = true
     }
 
@@ -332,17 +382,26 @@ struct DocumentDetailView: View {
         isRenaming = true
 
         Task {
-            await library.rename(documentToRename, title: title)
+            let didRename: Bool
+            if documentToRename.isSecure, let secureAccess {
+                didRename = await library.renameSecure(documentToRename, title: title, access: secureAccess)
+            } else {
+                await library.rename(documentToRename, title: title)
+                didRename = library.activeError == nil
+            }
             isRenaming = false
 
-            guard library.activeError == nil else { return }
+            guard didRename else { return }
 
+            if documentToRename.isSecure {
+                secureTitleOverride = DocumentTitleFormatter.sanitized(title, fallbackDate: documentToRename.createdAt)
+            }
             stagedTitle = self.currentDocument.title
             isShowingRenameSheet = false
         }
     }
 
-    private func loadPages() {
+    private func loadPages() async {
         isLoadingPreview = true
         previewErrorMessage = nil
         renderedPages = []
@@ -350,18 +409,37 @@ struct DocumentDetailView: View {
         showsControls = true
         zoomedPageID = nil
 
-        let url = currentDocument.pdfURL
-
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            previewErrorMessage = "The PDF file is missing from local storage."
-            isLoadingPreview = false
-            return
-        }
-
-        guard let pdfDocument = PDFDocument(url: url), pdfDocument.pageCount > 0 else {
-            previewErrorMessage = "The PDF file exists, but the app could not read it."
-            isLoadingPreview = false
-            return
+        let pdfDocument: PDFDocument
+        if currentDocument.isSecure {
+            guard let secureAccess else {
+                previewErrorMessage = LibraryRepositoryError.secureAccessRequired.localizedDescription
+                isLoadingPreview = false
+                return
+            }
+            do {
+                let data = try await library.secureAssetData(for: currentDocument, kind: .pdf, access: secureAccess)
+                guard let decryptedDocument = PDFDocument(data: data), decryptedDocument.pageCount > 0 else {
+                    throw DocumentExportError.sourceDocumentUnreadable
+                }
+                pdfDocument = decryptedDocument
+            } catch {
+                previewErrorMessage = error.localizedDescription
+                isLoadingPreview = false
+                return
+            }
+        } else {
+            let url = currentDocument.pdfURL
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                previewErrorMessage = "The PDF file is missing from local storage."
+                isLoadingPreview = false
+                return
+            }
+            guard let storedDocument = PDFDocument(url: url), storedDocument.pageCount > 0 else {
+                previewErrorMessage = "The PDF file exists, but the app could not read it."
+                isLoadingPreview = false
+                return
+            }
+            pdfDocument = storedDocument
         }
 
         let pages = (0..<pdfDocument.pageCount).compactMap { index -> DocumentPageSnapshot? in
@@ -414,6 +492,9 @@ struct DocumentDetailView: View {
     }
 
     private func ensurePreparedExport(for quality: DocumentExportQuality) {
+        // Secure documents are prepared only by the authorized export path below.
+        // The ordinary size-preview path reads a URL and must never see vault bytes.
+        guard !currentDocument.isSecure else { return }
         guard preparedExports[quality] == nil else { return }
         guard !exportPreviewLoadingQualities.contains(quality) else { return }
 
@@ -431,19 +512,12 @@ struct DocumentDetailView: View {
                     exportPreviewErrors[quality] = nil
                     preparedExports[quality] = preparedExport
 
-                    if pendingShareQuality == quality {
-                        completeSharePreparation(with: preparedExport, quality: quality)
-                    }
                 }
             } catch is CancellationError {
                 _ = await MainActor.run {
                     exportPreviewLoadingQualities.remove(quality)
                     exportPreparationTasks.removeValue(forKey: quality)
 
-                    if pendingShareQuality == quality {
-                        pendingShareQuality = nil
-                        isPreparingShare = false
-                    }
                 }
             } catch {
                 _ = await MainActor.run {
@@ -451,10 +525,6 @@ struct DocumentDetailView: View {
                     exportPreparationTasks.removeValue(forKey: quality)
                     exportPreviewErrors[quality] = error.localizedDescription
 
-                    if pendingShareQuality == quality {
-                        pendingShareQuality = nil
-                        isPreparingShare = false
-                    }
                 }
             }
         }
@@ -463,15 +533,48 @@ struct DocumentDetailView: View {
     }
 
     private func prepareShare(using quality: DocumentExportQuality) {
-        guard !isPreparingShare else { return }
+        guard !isPreparingShare, let exportPasswords else { return }
 
         isPreparingShare = true
         pendingShareQuality = quality
+        let documentToExport = currentDocument
+        let configuration = PDFExportConfiguration(
+            quality: quality,
+            requiresPassword: requiresExportPassword,
+            passwords: exportPasswords,
+            sourceProtection: documentToExport.protection
+        )
 
-        if let preparedExport = preparedExports[quality] {
-            completeSharePreparation(with: preparedExport, quality: quality)
-        } else {
-            ensurePreparedExport(for: quality)
+        Task {
+            do {
+                let authorizedSourceData: Data?
+                if documentToExport.isSecure {
+                    guard let secureAccess else { throw LibraryRepositoryError.secureAccessRequired }
+                    authorizedSourceData = try await library.secureAssetData(
+                        for: documentToExport,
+                        kind: .pdf,
+                        access: secureAccess
+                    )
+                } else {
+                    authorizedSourceData = nil
+                }
+                let preparedExport = try await Self.exportService.prepareExport(
+                    for: documentToExport,
+                    configuration: configuration,
+                    authorizedSourceData: authorizedSourceData
+                )
+                await MainActor.run {
+                    guard pendingShareQuality == quality else { return }
+                    completeSharePreparation(with: preparedExport, quality: quality)
+                }
+            } catch {
+                await MainActor.run {
+                    guard pendingShareQuality == quality else { return }
+                    pendingShareQuality = nil
+                    isPreparingShare = false
+                    exportPreviewErrors[quality] = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -482,6 +585,10 @@ struct DocumentDetailView: View {
         pendingSharePresentation = true
         isShowingExportSheet = false
         isPreparingShare = false
+
+        if !preparedExport.isPasswordProtected {
+            exportPasswords = nil
+        }
     }
 
     private func cleanupPreparedExports() {
@@ -493,10 +600,36 @@ struct DocumentDetailView: View {
         exportPreviewLoadingQualities = []
         pendingShareQuality = nil
         isPreparingShare = false
+        exportPasswords = nil
+        isExportPasswordRevealed = false
 
         Task {
             await Self.exportService.removeTemporaryExports(for: documentToCleanup)
         }
+    }
+
+    @discardableResult
+    private func generateExportPasswords() -> Bool {
+        do {
+            exportPasswords = try PDFPasswordGenerator().generate()
+            isExportPasswordRevealed = false
+            return true
+        } catch {
+            library.activeError = LibraryError(message: error.localizedDescription)
+            return false
+        }
+    }
+
+    private func copyExportPassword() {
+        guard let exportPasswords else { return }
+        UIPasteboard.general.setItems(
+            [[UTType.plainText.identifier: exportPasswords.pdfPassword]],
+            options: [
+                .localOnly: true,
+                .expirationDate: Date().addingTimeInterval(5 * 60)
+            ]
+        )
+        UIAccessibility.post(notification: .announcement, argument: "Password copied for five minutes")
     }
 
     private func requestNativeReviewIfNeeded() async {
@@ -545,9 +678,14 @@ private struct DocumentPageSnapshot: Identifiable {
 
 private struct ActivityShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
+    let onComplete: () -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in
+            DispatchQueue.main.async(execute: onComplete)
+        }
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
@@ -560,8 +698,14 @@ private struct DocumentExportSheet: View {
     let loadingQualities: Set<DocumentExportQuality>
     let isPreparingShare: Bool
     let exportErrorMessage: String?
+    @Binding var requiresPassword: Bool
+    let passwords: PDFPasswordPair?
+    @Binding var isPasswordRevealed: Bool
+    let sourceIsSecure: Bool
     let onCancel: () -> Void
     let onSelectionChange: (DocumentExportQuality) -> Void
+    let onCopyPassword: () -> Void
+    let onGeneratePassword: () -> Bool
     let onShare: () -> Void
 
     var body: some View {
@@ -586,6 +730,28 @@ private struct DocumentExportSheet: View {
                     Text("Export Quality")
                 } footer: {
                     Text("Smaller files are easier to email and upload. The original document saved in your library stays unchanged.")
+                }
+
+                Section {
+                    PDFExportSecurityCard(
+                        requiresPassword: $requiresPassword,
+                        passwords: passwords,
+                        isPasswordRevealed: $isPasswordRevealed,
+                        isPreparingShare: isPreparingShare,
+                        onCopyPassword: onCopyPassword,
+                        onGeneratePassword: onGeneratePassword
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } header: {
+                    Text("Security")
+                } footer: {
+                    if sourceIsSecure && !requiresPassword {
+                        Text("This shared copy will not require a password.")
+                    } else {
+                        Text("Password protection applies only to the shared copy. The library original remains unchanged.")
+                    }
                 }
 
                 Section {
@@ -625,6 +791,233 @@ private struct DocumentExportSheet: View {
         }
         .onChange(of: selectedQuality) { newValue in
             onSelectionChange(newValue)
+        }
+    }
+}
+
+private struct PDFExportSecurityCard: View {
+    @Binding var requiresPassword: Bool
+    let passwords: PDFPasswordPair?
+    @Binding var isPasswordRevealed: Bool
+    let isPreparingShare: Bool
+    let onCopyPassword: () -> Void
+    let onGeneratePassword: () -> Bool
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var feedback: PasswordActionFeedback?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: requiresPassword ? "lock.fill" : "lock.open.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(requiresPassword ? Color.accentColor : Color.secondary)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        (requiresPassword ? Color.accentColor : Color.secondary)
+                            .opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Require password")
+                        .font(.body.weight(.semibold))
+
+                    Text(requiresPassword ? "Protect this shared copy." : "Anyone can open this shared copy.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle("Require password", isOn: $requiresPassword)
+                    .labelsHidden()
+                    .disabled(isPreparingShare)
+            }
+
+            if requiresPassword, let passwords {
+                Divider()
+
+                passwordPanel(passwords)
+
+                actionButtons
+
+                if let feedback {
+                    Label(feedback.message, systemImage: feedback.systemImage)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(feedback.color)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+        }
+        .padding(18)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.22), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+        .animation(.easeInOut(duration: 0.2), value: requiresPassword)
+        .animation(.easeInOut(duration: 0.2), value: feedback)
+        .onChange(of: requiresPassword) { _ in
+            feedback = nil
+            isPasswordRevealed = false
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    private func passwordPanel(_ passwords: PDFPasswordPair) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("PDF password")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Spacer()
+
+                Button {
+                    isPasswordRevealed.toggle()
+                    feedback = nil
+                    UISelectionFeedbackGenerator().selectionChanged()
+                } label: {
+                    Label(
+                        isPasswordRevealed ? "Hide" : "Show",
+                        systemImage: isPasswordRevealed ? "eye.slash" : "eye"
+                    )
+                    .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .disabled(isPreparingShare)
+                .accessibilityLabel(isPasswordRevealed ? "Hide PDF password" : "Show PDF password")
+            }
+
+            Text(isPasswordRevealed ? passwords.displayedUserPassword : "••••-••••-••••-••••")
+                .font(.system(.title3, design: .monospaced, weight: .semibold))
+                .tracking(0.5)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .privacySensitive()
+                .accessibilityLabel(isPasswordRevealed ? passwords.displayedUserPassword : "Password hidden")
+
+            Text("Use this password exactly as shown.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(
+            Color(.tertiarySystemFill),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.18), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 10) {
+                copyButton
+                generateButton
+            }
+        } else {
+            HStack(spacing: 10) {
+                copyButton
+                generateButton
+            }
+        }
+    }
+
+    private var copyButton: some View {
+        Button(action: copyPassword) {
+            Label(
+                feedback == .copied ? "Copied" : "Copy password",
+                systemImage: feedback == .copied ? "checkmark" : "doc.on.doc"
+            )
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .appProminentButtonStyle()
+        .disabled(isPreparingShare)
+        .accessibilityLabel(feedback == .copied ? "Password copied" : "Copy PDF password for five minutes")
+    }
+
+    private var generateButton: some View {
+        Button(action: generatePassword) {
+            Label(
+                feedback == .generated ? "Generated" : "New password",
+                systemImage: feedback == .generated ? "checkmark" : "arrow.clockwise"
+            )
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 18))
+        .disabled(isPreparingShare)
+        .accessibilityLabel(feedback == .generated ? "New password generated" : "Generate a new PDF password")
+    }
+
+    private func copyPassword() {
+        onCopyPassword()
+        showFeedback(.copied)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func generatePassword() {
+        guard onGeneratePassword() else { return }
+        showFeedback(.generated)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        UIAccessibility.post(notification: .announcement, argument: "A new PDF password is ready")
+    }
+
+    private func showFeedback(_ newFeedback: PasswordActionFeedback) {
+        feedback = newFeedback
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard feedback == newFeedback else { return }
+            withAnimation { feedback = nil }
+        }
+    }
+}
+
+private enum PasswordActionFeedback: Equatable {
+    case copied
+    case generated
+
+    var message: String {
+        switch self {
+        case .copied:
+            "Copied to this device for 5 minutes."
+        case .generated:
+            "A new password is ready."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .copied:
+            "checkmark.circle.fill"
+        case .generated:
+            "arrow.clockwise.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .copied:
+            .green
+        case .generated:
+            .accentColor
         }
     }
 }

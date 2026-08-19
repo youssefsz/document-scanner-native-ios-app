@@ -11,6 +11,9 @@ nonisolated final class CDDocument: NSManagedObject {
     @NSManaged var pageCount: Int64
     @NSManaged var pdfFilename: String
     @NSManaged var previewFilename: String
+    @NSManaged var protectionKind: Int16
+    @NSManaged var protectionFormatVersion: Int16
+    @NSManaged var secureTitleBlob: Data?
     @NSManaged var folder: CDFolder?
 
     @nonobjc class func fetchRequest() -> NSFetchRequest<CDDocument> {
@@ -25,6 +28,7 @@ nonisolated final class CDFolder: NSManagedObject {
     @NSManaged var normalizedName: String
     @NSManaged var createdAt: Date
     @NSManaged var updatedAt: Date
+    @NSManaged var isSecure: Bool
     @NSManaged var documents: Set<CDDocument>
 
     @nonobjc class func fetchRequest() -> NSFetchRequest<CDFolder> {
@@ -79,7 +83,7 @@ nonisolated private final class PersistentStoreLoadGate: @unchecked Sendable {
     }
 }
 
-actor CoreDataLibraryRepository: LibraryRepository {
+actor CoreDataLibraryRepository: DocumentSecurityRepository {
     private let paths: StoragePaths
     private let fileManager: FileManager
     private let container: NSPersistentContainer
@@ -92,8 +96,8 @@ actor CoreDataLibraryRepository: LibraryRepository {
         self.fileManager = fileManager
         self.importer = LegacyJSONLibraryImporter(paths: paths)
 
-        let model = LibraryManagedObjectModel.makeV1()
-        model.versionIdentifiers = ["LibraryModelV1"]
+        let model = LibraryManagedObjectModel.makeFinalV2()
+        model.versionIdentifiers = ["LibraryModelFinalV2"]
         let container = NSPersistentContainer(name: "LibraryModel", managedObjectModel: model)
         let description = NSPersistentStoreDescription()
         if inMemory {
@@ -138,9 +142,10 @@ actor CoreDataLibraryRepository: LibraryRepository {
             var predicates: [NSPredicate] = []
             switch scope {
             case .all:
-                break
+                predicates.append(NSPredicate(format: "protectionKind == %d", DocumentProtection.standard.rawValue))
             case .unfiled:
                 predicates.append(NSPredicate(format: "folder == nil"))
+                predicates.append(NSPredicate(format: "protectionKind == %d", DocumentProtection.standard.rawValue))
             case .folder(let id):
                 predicates.append(NSPredicate(format: "folder.id == %@", id as CVarArg))
             }
@@ -171,7 +176,7 @@ actor CoreDataLibraryRepository: LibraryRepository {
 
             let folders = try context.fetch(request)
             return folders.map { folder in
-                let newest = folder.documents
+                let newest = (folder.isSecure ? [] : folder.documents)
                     .sorted {
                         if $0.createdAt == $1.createdAt { return $0.id.uuidString < $1.id.uuidString }
                         return $0.createdAt > $1.createdAt
@@ -191,13 +196,22 @@ actor CoreDataLibraryRepository: LibraryRepository {
     func createDocument(_ document: ScannedDocument) async throws {
         try await ensureStoreLoaded()
         try await perform { context in
+            guard document.protection == .standard else {
+                throw LibraryRepositoryError.secureAccessRequired
+            }
             let request = CDDocument.fetchRequest()
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "id == %@", document.id as CVarArg)
             let object = try context.fetch(request).first ?? CDDocument(context: context)
             Self.apply(document, to: object)
             if let folderID = document.folderID {
-                object.folder = try Self.fetchFolder(id: folderID, context: context)
+                guard let folder = try Self.fetchFolder(id: folderID, context: context) else {
+                    throw LibraryRepositoryError.missingFolder
+                }
+                guard !folder.isSecure else {
+                    throw LibraryRepositoryError.secureAccessRequired
+                }
+                object.folder = folder
             } else {
                 object.folder = nil
             }
@@ -211,6 +225,9 @@ actor CoreDataLibraryRepository: LibraryRepository {
             guard let object = try Self.fetchDocument(id: id, context: context) else {
                 throw LibraryRepositoryError.missingDocument
             }
+            guard object.protectionKind == DocumentProtection.standard.rawValue else {
+                throw LibraryRepositoryError.secureAccessRequired
+            }
             let sanitized = DocumentTitleFormatter.sanitized(title, fallbackDate: object.createdAt)
             object.title = sanitized
             object.normalizedTitle = LibraryTextNormalizer.normalize(sanitized)
@@ -222,6 +239,9 @@ actor CoreDataLibraryRepository: LibraryRepository {
         guard !ids.isEmpty else { return }
         try await ensureStoreLoaded()
         let documents = try await fetchDocuments(ids: ids)
+        guard documents.allSatisfy({ !$0.isSecure }) else {
+            throw LibraryRepositoryError.secureAccessRequired
+        }
         let recovery = try stageFilesForRecovery(documents: documents)
 
         do {
@@ -238,7 +258,7 @@ actor CoreDataLibraryRepository: LibraryRepository {
         }
     }
 
-    func createFolder(name: String) async throws -> DocumentFolder {
+    func createFolder(name: String, security: FolderSecurity) async throws -> DocumentFolder {
         let submittedName = LibraryTextNormalizer.ownedCopy(name)
         let value = try LibraryTextNormalizer.validatedFolderName(submittedName)
         try await ensureStoreLoaded()
@@ -251,6 +271,7 @@ actor CoreDataLibraryRepository: LibraryRepository {
                 object.normalizedName = value.normalized
                 object.createdAt = .now
                 object.updatedAt = .now
+                object.isSecure = security == .secure
                 try context.save()
                 return Self.folder(from: object)
             }
@@ -281,6 +302,10 @@ actor CoreDataLibraryRepository: LibraryRepository {
 
     func deleteFolder(id: UUID, mode: FolderDeletionMode) async throws {
         try await ensureStoreLoaded()
+        let securitySnapshot = try await securitySnapshot(folderID: id)
+        guard !securitySnapshot.folder.isSecure else {
+            throw LibraryRepositoryError.secureAccessRequired
+        }
         switch mode {
         case .keepDocuments:
             try await perform { context in
@@ -329,7 +354,223 @@ actor CoreDataLibraryRepository: LibraryRepository {
             request.predicate = NSPredicate(format: "id IN %@", ids.map { $0 as NSUUID })
             let documents = try context.fetch(request)
             guard documents.count == ids.count else { throw LibraryRepositoryError.missingDocument }
+            guard !documents.contains(where: { $0.protectionKind != DocumentProtection.standard.rawValue }),
+                  destination?.isSecure != true else {
+                throw LibraryRepositoryError.secureAccessRequired
+            }
             documents.forEach { $0.folder = destination }
+            try context.save()
+        }
+    }
+
+    func securitySnapshot(folderID: UUID) async throws -> FolderSecuritySnapshot {
+        try await ensureStoreLoaded()
+        return try await perform { context in
+            guard let folder = try Self.fetchFolder(id: folderID, context: context) else {
+                throw LibraryRepositoryError.missingFolder
+            }
+            let records = folder.documents
+                .sorted {
+                    if $0.createdAt == $1.createdAt { return $0.id.uuidString < $1.id.uuidString }
+                    return $0.createdAt < $1.createdAt
+                }
+                .map { SecurityDocumentRecord(document: Self.document(from: $0), secureTitleBlob: $0.secureTitleBlob) }
+            return FolderSecuritySnapshot(folder: Self.folder(from: folder), documents: records)
+        }
+    }
+
+    func commitSecurityChanges(
+        folderID: UUID,
+        targetSecurity: FolderSecurity,
+        changes: [SecurityMetadataChange]
+    ) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            guard let folder = try Self.fetchFolder(id: folderID, context: context) else {
+                throw LibraryRepositoryError.missingFolder
+            }
+            let expectedIDs = Set(folder.documents.map(\.id))
+            guard expectedIDs == Set(changes.map(\.documentID)) else {
+                throw LibraryRepositoryError.invalidSecurityState
+            }
+
+            for change in changes {
+                guard let document = try Self.fetchDocument(id: change.documentID, context: context) else {
+                    throw LibraryRepositoryError.missingDocument
+                }
+                document.title = change.title
+                document.normalizedTitle = LibraryTextNormalizer.normalize(change.title)
+                document.pdfFilename = change.pdfFilename
+                document.previewFilename = change.previewFilename
+                document.protectionKind = change.protection.rawValue
+                document.protectionFormatVersion = change.protectionFormatVersion
+                document.secureTitleBlob = change.secureTitleBlob
+                document.folder = folder
+            }
+            folder.isSecure = targetSecurity == .secure
+            folder.updatedAt = .now
+            try context.save()
+        }
+    }
+
+    func securityCommitMatches(
+        folderID: UUID,
+        targetSecurity: FolderSecurity,
+        changes: [SecurityMetadataChange]
+    ) async throws -> Bool {
+        let snapshot = try await securitySnapshot(folderID: folderID)
+        guard snapshot.folder.security == targetSecurity,
+              snapshot.documents.count == changes.count else { return false }
+        let records = Dictionary(uniqueKeysWithValues: snapshot.documents.map { ($0.document.id, $0) })
+        return changes.allSatisfy { change in
+            guard let record = records[change.documentID] else { return false }
+            return record.document.title == change.title &&
+                record.document.pdfFilename == change.pdfFilename &&
+                record.document.previewFilename == change.previewFilename &&
+                record.document.protection == change.protection &&
+                record.document.protectionFormatVersion == change.protectionFormatVersion &&
+                record.secureTitleBlob == change.secureTitleBlob &&
+                record.document.folderID == change.folderID
+        }
+    }
+
+    func renameSecureDocument(id: UUID, folderID: UUID, secureTitleBlob: Data) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            guard let document = try Self.fetchDocument(id: id, context: context) else {
+                throw LibraryRepositoryError.missingDocument
+            }
+            guard document.folder?.id == folderID,
+                  document.folder?.isSecure == true,
+                  document.protectionKind == DocumentProtection.vaultV1.rawValue else {
+                throw LibraryRepositoryError.invalidSecurityState
+            }
+            document.title = ""
+            document.normalizedTitle = ""
+            document.secureTitleBlob = secureTitleBlob
+            try context.save()
+        }
+    }
+
+    func deleteSecureDocumentMetadata(ids: Set<UUID>, folderID: UUID) async throws {
+        guard !ids.isEmpty else { return }
+        try await ensureStoreLoaded()
+        try await perform { context in
+            let request = CDDocument.fetchRequest()
+            request.predicate = NSPredicate(format: "id IN %@", ids.map { $0 as NSUUID })
+            let documents = try context.fetch(request)
+            guard documents.count == ids.count,
+                  documents.allSatisfy({
+                      $0.folder?.id == folderID &&
+                      $0.folder?.isSecure == true &&
+                      $0.protectionKind == DocumentProtection.vaultV1.rawValue
+                  }) else {
+                throw LibraryRepositoryError.invalidSecurityState
+            }
+            documents.forEach(context.delete)
+            try context.save()
+        }
+    }
+
+    func secureDocumentMetadataExists(ids: Set<UUID>) async throws -> Bool {
+        guard !ids.isEmpty else { return false }
+        try await ensureStoreLoaded()
+        return try await perform { context in
+            let request = CDDocument.fetchRequest()
+            request.fetchLimit = 1
+            request.predicate = NSPredicate(format: "id IN %@", ids.map { $0 as NSUUID })
+            return try context.fetch(request).first != nil
+        }
+    }
+
+    func deleteAuthenticatedSecureFolder(id: UUID) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            guard let folder = try Self.fetchFolder(id: id, context: context), folder.isSecure else {
+                throw LibraryRepositoryError.missingFolder
+            }
+            guard folder.documents.isEmpty else { throw LibraryRepositoryError.invalidSecurityState }
+            context.delete(folder)
+            try context.save()
+        }
+    }
+
+    func commitMovedSecurityChanges(_ changes: [SecurityMetadataChange], to folderID: UUID?) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            let destination: CDFolder?
+            if let folderID {
+                guard let folder = try Self.fetchFolder(id: folderID, context: context) else {
+                    throw LibraryRepositoryError.missingFolder
+                }
+                destination = folder
+            } else {
+                destination = nil
+            }
+            for change in changes {
+                guard let document = try Self.fetchDocument(id: change.documentID, context: context) else {
+                    throw LibraryRepositoryError.missingDocument
+                }
+                document.title = change.title
+                document.normalizedTitle = LibraryTextNormalizer.normalize(change.title)
+                document.pdfFilename = change.pdfFilename
+                document.previewFilename = change.previewFilename
+                document.protectionKind = change.protection.rawValue
+                document.protectionFormatVersion = change.protectionFormatVersion
+                document.secureTitleBlob = change.secureTitleBlob
+                document.folder = destination
+            }
+            try context.save()
+        }
+    }
+
+    func documentSecurityChangesMatch(_ changes: [SecurityMetadataChange]) async throws -> Bool {
+        try await ensureStoreLoaded()
+        return try await perform { context in
+            try changes.allSatisfy { change in
+                guard let document = try Self.fetchDocument(id: change.documentID, context: context) else { return false }
+                return document.title == change.title &&
+                    document.pdfFilename == change.pdfFilename &&
+                    document.previewFilename == change.previewFilename &&
+                    document.protectionKind == change.protection.rawValue &&
+                    document.protectionFormatVersion == change.protectionFormatVersion &&
+                    document.secureTitleBlob == change.secureTitleBlob &&
+                    document.folder?.id == change.folderID
+            }
+        }
+    }
+
+    func createSecureDocumentMetadata(
+        _ change: SecurityMetadataChange,
+        createdAt: Date,
+        pageCount: Int
+    ) async throws {
+        guard change.protection == .vaultV1,
+              change.title.isEmpty,
+              change.secureTitleBlob != nil,
+              let folderID = change.folderID else {
+            throw LibraryRepositoryError.invalidSecurityState
+        }
+        try await ensureStoreLoaded()
+        try await perform { context in
+            guard let folder = try Self.fetchFolder(id: folderID, context: context), folder.isSecure else {
+                throw LibraryRepositoryError.missingFolder
+            }
+            guard try Self.fetchDocument(id: change.documentID, context: context) == nil else {
+                throw LibraryRepositoryError.invalidSecurityState
+            }
+            let document = CDDocument(context: context)
+            document.id = change.documentID
+            document.title = ""
+            document.normalizedTitle = ""
+            document.createdAt = createdAt
+            document.pageCount = Int64(pageCount)
+            document.pdfFilename = change.pdfFilename
+            document.previewFilename = change.previewFilename
+            document.protectionKind = change.protection.rawValue
+            document.protectionFormatVersion = change.protectionFormatVersion
+            document.secureTitleBlob = change.secureTitleBlob
+            document.folder = folder
             try context.save()
         }
     }
@@ -480,6 +721,8 @@ actor CoreDataLibraryRepository: LibraryRepository {
         object.pageCount = Int64(document.pageCount)
         object.pdfFilename = document.pdfFilename
         object.previewFilename = document.previewFilename
+        object.protectionKind = document.protection.rawValue
+        object.protectionFormatVersion = document.protectionFormatVersion
     }
 
     private static func document(from object: CDDocument) -> ScannedDocument {
@@ -490,7 +733,9 @@ actor CoreDataLibraryRepository: LibraryRepository {
             pageCount: Int(object.pageCount),
             pdfFilename: object.pdfFilename,
             previewFilename: object.previewFilename,
-            folderID: object.folder?.id
+            folderID: object.folder?.id,
+            protection: DocumentProtection(rawValue: object.protectionKind) ?? .standard,
+            protectionFormatVersion: object.protectionFormatVersion
         )
     }
 
@@ -500,7 +745,8 @@ actor CoreDataLibraryRepository: LibraryRepository {
             name: object.name,
             normalizedName: object.normalizedName,
             createdAt: object.createdAt,
-            updatedAt: object.updatedAt
+            updatedAt: object.updatedAt,
+            security: object.isSecure ? .secure : .standard
         )
     }
 
@@ -538,7 +784,7 @@ actor CoreDataLibraryRepository: LibraryRepository {
 }
 
 nonisolated private enum LibraryManagedObjectModel {
-    static func makeV1() -> NSManagedObjectModel {
+    static func makeFinalV2() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
 
         let document = NSEntityDescription()
@@ -551,7 +797,10 @@ nonisolated private enum LibraryManagedObjectModel {
         let pageCount = attribute("pageCount", .integer64AttributeType, optional: false, defaultValue: 0)
         let pdfFilename = attribute("pdfFilename", .stringAttributeType, optional: false, defaultValue: "")
         let previewFilename = attribute("previewFilename", .stringAttributeType, optional: false, defaultValue: "")
-        document.properties = [documentID, title, normalizedTitle, createdAt, pageCount, pdfFilename, previewFilename]
+        let protectionKind = attribute("protectionKind", .integer16AttributeType, optional: false, defaultValue: DocumentProtection.standard.rawValue)
+        let protectionFormatVersion = attribute("protectionFormatVersion", .integer16AttributeType, optional: false, defaultValue: 0)
+        let secureTitleBlob = attribute("secureTitleBlob", .binaryDataAttributeType, optional: true)
+        document.properties = [documentID, title, normalizedTitle, createdAt, pageCount, pdfFilename, previewFilename, protectionKind, protectionFormatVersion, secureTitleBlob]
         document.uniquenessConstraints = [["id"]]
         document.indexes = [
             index(name: "DocumentByNormalizedTitle", property: normalizedTitle),
@@ -566,7 +815,8 @@ nonisolated private enum LibraryManagedObjectModel {
         let normalizedName = attribute("normalizedName", .stringAttributeType, optional: false, defaultValue: "")
         let folderCreatedAt = attribute("createdAt", .dateAttributeType, optional: false)
         let updatedAt = attribute("updatedAt", .dateAttributeType, optional: false)
-        folder.properties = [folderID, name, normalizedName, folderCreatedAt, updatedAt]
+        let isSecure = attribute("isSecure", .booleanAttributeType, optional: false, defaultValue: false)
+        folder.properties = [folderID, name, normalizedName, folderCreatedAt, updatedAt, isSecure]
         folder.uniquenessConstraints = [["id"], ["normalizedName"]]
         folder.indexes = [index(name: "FolderByNormalizedName", property: normalizedName)]
 

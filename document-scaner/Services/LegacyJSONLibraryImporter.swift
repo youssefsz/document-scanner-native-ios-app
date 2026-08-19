@@ -17,7 +17,8 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([ScannedDocument].self, from: data))?
+        return (try? decoder.decode([LegacyDocumentV106].self, from: data))?
+            .map(\.document)
             .sorted { $0.createdAt > $1.createdAt } ?? []
     }
 
@@ -26,7 +27,7 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
         if try migrationMarker(in: context) != nil { return }
 
         let sourceData: Data
-        let legacyDocuments: [ScannedDocument]
+        let legacyDocuments: [LegacyDocumentV106]
 
         if fileManager.fileExists(atPath: paths.legacyMetadataURL.path) {
             sourceData = try Data(contentsOf: paths.legacyMetadataURL)
@@ -35,7 +36,7 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             do {
-                legacyDocuments = try decoder.decode([ScannedDocument].self, from: sourceData)
+                legacyDocuments = try decoder.decode([LegacyDocumentV106].self, from: sourceData)
             } catch {
                 context.rollback()
                 throw LibraryRepositoryError.migrationFailed("The legacy catalog is not valid JSON.")
@@ -63,6 +64,9 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
             object.pageCount = Int64(document.pageCount)
             object.pdfFilename = document.pdfFilename
             object.previewFilename = document.previewFilename
+            object.protectionKind = DocumentProtection.standard.rawValue
+            object.protectionFormatVersion = 0
+            object.secureTitleBlob = nil
             object.folder = nil
         }
 
@@ -107,5 +111,31 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
 
     private static func checksum(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Exact metadata shape written by version 1.0.6. Keep this independent from the
+/// current domain model so adding fields cannot silently change migration input.
+nonisolated private struct LegacyDocumentV106: Codable, Sendable {
+    let id: UUID
+    let title: String
+    let createdAt: Date
+    let pageCount: Int
+    let pdfFilename: String
+    let previewFilename: String
+    let folderID: UUID?
+
+    var document: ScannedDocument {
+        ScannedDocument(
+            id: id,
+            title: title,
+            createdAt: createdAt,
+            pageCount: pageCount,
+            pdfFilename: pdfFilename,
+            previewFilename: previewFilename,
+            folderID: nil,
+            protection: .standard,
+            protectionFormatVersion: 0
+        )
     }
 }

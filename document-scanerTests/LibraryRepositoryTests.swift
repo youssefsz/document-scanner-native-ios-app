@@ -1,5 +1,7 @@
 import XCTest
 import UIKit
+import CryptoKit
+import PDFKit
 @testable import DocScanner
 
 final class LibraryRepositoryTests: XCTestCase {
@@ -54,6 +56,25 @@ final class LibraryRepositoryTests: XCTestCase {
         XCTAssertEqual(backups.filter { $0.pathExtension == "json" }.count, 1)
         let stillNeedsMigration = try await repository.needsLegacyMigration()
         XCTAssertFalse(stillNeedsMigration)
+    }
+
+    func testFrozenVersion106FixtureImportsAsStandardUnfiledMetadata() async throws {
+        let bundle = Bundle(for: LibraryRepositoryTests.self)
+        let fixtureURL = bundle.url(forResource: "library-v1.0.6", withExtension: "json", subdirectory: "Fixtures")
+            ?? bundle.url(forResource: "library-v1.0.6", withExtension: "json")
+        let fixture = try Data(contentsOf: XCTUnwrap(fixtureURL))
+        try fixture.write(to: paths.legacyMetadataURL, options: .atomic)
+
+        let repository = CoreDataLibraryRepository(paths: paths, inMemory: true)
+        try await repository.bootstrap()
+        let documents = try await repository.fetchDocuments(scope: .all, query: "cafe", sort: .newestFirst)
+
+        XCTAssertEqual(documents.count, 1)
+        XCTAssertEqual(documents[0].title, "Café receipts")
+        XCTAssertNil(documents[0].folderID)
+        XCTAssertEqual(documents[0].protection, .standard)
+        XCTAssertEqual(documents[0].protectionFormatVersion, 0)
+        XCTAssertEqual(try Data(contentsOf: paths.legacyMetadataURL), fixture)
     }
 
     func testMalformedLegacyJSONDoesNotMarkMigrationComplete() async throws {
@@ -124,6 +145,95 @@ final class LibraryRepositoryTests: XCTestCase {
         XCTAssertTrue(remaining.isEmpty)
     }
 
+    func testSecureDocumentsAreAbsentFromGlobalFetchAndFolderCoverData() async throws {
+        let repository = CoreDataLibraryRepository(paths: paths, inMemory: true)
+        try await repository.bootstrap()
+        let folder = try await repository.createFolder(name: "Private", security: .secure)
+        let id = UUID()
+        let secureDocument = ScannedDocument(
+            id: id,
+            title: "",
+            pageCount: 1,
+            pdfFilename: "\(id).vault",
+            previewFilename: "\(id)-preview.vault",
+            folderID: folder.id,
+            protection: .vaultV1,
+            protectionFormatVersion: 1
+        )
+        try await repository.createSecureDocumentMetadata(
+            SecurityMetadataChange(
+                documentID: id,
+                title: "",
+                pdfFilename: secureDocument.pdfFilename,
+                previewFilename: secureDocument.previewFilename,
+                protection: .vaultV1,
+                protectionFormatVersion: 1,
+                secureTitleBlob: Data("encrypted-title".utf8),
+                folderID: folder.id
+            ),
+            createdAt: secureDocument.createdAt,
+            pageCount: secureDocument.pageCount
+        )
+
+        let global = try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
+        let insideFolder = try await repository.fetchDocuments(scope: .folder(folder.id), query: "", sort: .newestFirst)
+        let summaries = try await repository.fetchFolders(query: "private")
+
+        XCTAssertTrue(global.isEmpty)
+        XCTAssertEqual(insideFolder, [secureDocument])
+        XCTAssertEqual(summaries.first?.folder.security, .secure)
+        XCTAssertEqual(summaries.first?.documentCount, 1)
+        XCTAssertTrue(summaries.first?.newestDocuments.isEmpty == true)
+    }
+
+    func testFolderSecurityConversionRoundTripsFilesTitlesAndMetadata() async throws {
+        let repository = CoreDataLibraryRepository(paths: paths, inMemory: true)
+        try await repository.bootstrap()
+        let folder = try await repository.createFolder(name: "Archive", security: .standard)
+        let id = UUID()
+        let document = ScannedDocument(
+            id: id,
+            title: "Tax return",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            pageCount: 1,
+            pdfFilename: "\(id).pdf",
+            previewFilename: "\(id).jpg",
+            folderID: folder.id
+        )
+        let pdfRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400))
+        try pdfRenderer.writePDF(to: document.pdfURL(in: paths)) { context in
+            context.beginPage()
+            ("Searchable text" as NSString).draw(at: CGPoint(x: 24, y: 24), withAttributes: [.font: UIFont.systemFont(ofSize: 18)])
+        }
+        let preview = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 160)).image { context in
+            UIColor.systemIndigo.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 160))
+        }
+        try XCTUnwrap(preview.jpegData(compressionQuality: 0.8)).write(to: document.previewURL(in: paths))
+        try await repository.createDocument(document)
+
+        let access = VaultAccess(folderID: folder.id, rootKey: SymmetricKey(size: .bits256))
+        let coordinator = DocumentSecurityCoordinator(repository: repository, paths: paths)
+        try await coordinator.convertFolder(id: folder.id, to: .secure, access: access)
+
+        let secured = try await repository.securitySnapshot(folderID: folder.id)
+        XCTAssertEqual(secured.folder.security, .secure)
+        XCTAssertEqual(secured.documents.first?.document.title, "")
+        XCTAssertEqual(secured.documents.first?.document.protection, .vaultV1)
+        XCTAssertNotNil(secured.documents.first?.secureTitleBlob)
+        XCTAssertTrue(secured.documents.first.map { FileManager.default.fileExists(atPath: $0.document.pdfURL(in: paths).path) } == true)
+        let globallyVisibleDocuments = try await repository.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
+        XCTAssertTrue(globallyVisibleDocuments.isEmpty)
+
+        try await coordinator.convertFolder(id: folder.id, to: .standard, access: access)
+        let restored = try await repository.fetchDocuments(scope: .folder(folder.id), query: "tax", sort: .newestFirst)
+        XCTAssertEqual(restored.count, 1)
+        XCTAssertEqual(restored[0].title, "Tax return")
+        XCTAssertEqual(restored[0].protection, .standard)
+        XCTAssertEqual(PDFDocument(url: restored[0].pdfURL(in: paths))?.pageCount, 1)
+        XCTAssertNotNil(UIImage(contentsOfFile: restored[0].previewURL(in: paths).path))
+    }
+
     private func makeDocument(title: String, offset: TimeInterval) -> ScannedDocument {
         let id = UUID()
         return ScannedDocument(
@@ -134,6 +244,100 @@ final class LibraryRepositoryTests: XCTestCase {
             pdfFilename: "\(id).pdf",
             previewFilename: "\(id).jpg"
         )
+    }
+}
+
+final class VaultCryptoServiceTests: XCTestCase {
+    func testEmptyAssetRoundTripsAndRepeatedEncryptionIsRandomized() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VaultCryptoEmptyTests-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let source = directory.appendingPathComponent("empty")
+        let first = directory.appendingPathComponent("first.vault")
+        let second = directory.appendingPathComponent("second.vault")
+        let restored = directory.appendingPathComponent("restored")
+        try Data().write(to: source)
+        let access = VaultAccess(folderID: UUID(), rootKey: SymmetricKey(size: .bits256))
+        let crypto = VaultCryptoService()
+        let documentID = UUID()
+
+        try crypto.encryptFile(at: source, to: first, documentID: documentID, kind: .preview, access: access)
+        try crypto.encryptFile(at: source, to: second, documentID: documentID, kind: .preview, access: access)
+        try crypto.decryptFile(at: first, to: restored, documentID: documentID, kind: .preview, access: access)
+
+        XCTAssertEqual(try Data(contentsOf: restored), Data())
+        XCTAssertNotEqual(try Data(contentsOf: first), try Data(contentsOf: second))
+        XCTAssertThrowsError(
+            try crypto.decryptFile(at: first, to: restored, documentID: documentID, kind: .pdf, access: access)
+        )
+    }
+
+    func testChunkedAssetAndTitleRoundTripAndTamperRejection() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VaultCryptoTests-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let source = directory.appendingPathComponent("source.pdf")
+        let encrypted = directory.appendingPathComponent("encrypted.vault")
+        let decrypted = directory.appendingPathComponent("decrypted.pdf")
+        var plaintext = Data(count: VaultCryptoService.chunkSize * 2 + 731)
+        plaintext.withUnsafeMutableBytes { buffer in
+            _ = SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+        }
+        try plaintext.write(to: source)
+
+        let id = UUID()
+        let access = VaultAccess(folderID: UUID(), rootKey: SymmetricKey(size: .bits256))
+        let crypto = VaultCryptoService()
+        try crypto.encryptFile(at: source, to: encrypted, documentID: id, kind: .pdf, access: access)
+        try crypto.decryptFile(at: encrypted, to: decrypted, documentID: id, kind: .pdf, access: access)
+        XCTAssertEqual(try Data(contentsOf: decrypted), plaintext)
+        XCTAssertThrowsError(
+            try crypto.decryptFile(at: encrypted, to: decrypted, documentID: UUID(), kind: .pdf, access: access)
+        )
+
+        let validEnvelope = try Data(contentsOf: encrypted)
+        var modifiedCiphertext = validEnvelope
+        modifiedCiphertext[modifiedCiphertext.index(before: modifiedCiphertext.endIndex)] ^= 0x01
+        try modifiedCiphertext.write(to: encrypted)
+        XCTAssertThrowsError(
+            try crypto.decryptFile(at: encrypted, to: decrypted, documentID: id, kind: .pdf, access: access)
+        )
+
+        var unsupportedVersion = validEnvelope
+        unsupportedVersion[8] = 0x7f
+        try unsupportedVersion.write(to: encrypted)
+        XCTAssertThrowsError(
+            try crypto.decryptFile(at: encrypted, to: decrypted, documentID: id, kind: .pdf, access: access)
+        )
+
+        try validEnvelope.dropLast(10).write(to: encrypted)
+        XCTAssertThrowsError(
+            try crypto.decryptFile(at: encrypted, to: decrypted, documentID: id, kind: .pdf, access: access)
+        )
+
+        let titleBlob = try crypto.encryptTitle("Hidden title", documentID: id, access: access)
+        XCTAssertEqual(try crypto.decryptTitle(titleBlob, documentID: id, access: access), "Hidden title")
+        var damagedTitle = titleBlob
+        damagedTitle[damagedTitle.index(before: damagedTitle.endIndex)] ^= 0x01
+        XCTAssertThrowsError(try crypto.decryptTitle(damagedTitle, documentID: id, access: access))
+
+        access.invalidate()
+        XCTAssertThrowsError(try crypto.decryptTitle(titleBlob, documentID: id, access: access))
+    }
+
+    func testGeneratedPDFPasswordsMatchProductFormat() throws {
+        let pair = try PDFPasswordGenerator().generate()
+        XCTAssertEqual(pair.userPassword.count, 16)
+        XCTAssertEqual(pair.ownerPassword.count, 32)
+        XCTAssertEqual(pair.displayedUserPassword.split(separator: "-").map(\.count), [4, 4, 4, 4])
+        XCTAssertEqual(pair.pdfPassword, pair.displayedUserPassword)
+        XCTAssertEqual(pair.pdfPassword.filter { $0 == "-" }.count, 3)
+        XCTAssertNotEqual(pair.userPassword, pair.ownerPassword)
+        XCTAssertTrue(pair.userPassword.allSatisfy { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".contains($0) })
     }
 }
 

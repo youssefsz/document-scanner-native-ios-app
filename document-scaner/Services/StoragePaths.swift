@@ -23,6 +23,18 @@ nonisolated struct StoragePaths: Sendable {
         rootDirectory.appendingPathComponent("Recovery", isDirectory: true)
     }
 
+    nonisolated var vaultDirectory: URL {
+        rootDirectory.appendingPathComponent("Vault", isDirectory: true)
+    }
+
+    nonisolated var sensitiveTemporaryDirectory: URL {
+        rootDirectory.appendingPathComponent("SensitiveTemporary", isDirectory: true)
+    }
+
+    nonisolated var securityOperationsDirectory: URL {
+        rootDirectory.appendingPathComponent("SecurityOperations", isDirectory: true)
+    }
+
     nonisolated var sqliteURL: URL {
         rootDirectory.appendingPathComponent("Library.sqlite", isDirectory: false)
     }
@@ -38,5 +50,18 @@ nonisolated struct StoragePaths: Sendable {
         try fileManager.createDirectory(at: migrationBackupsDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: recoveryDirectory, withIntermediateDirectories: true)
+        try createProtectedDirectory(vaultDirectory, fileManager: fileManager)
+        try createProtectedDirectory(sensitiveTemporaryDirectory, fileManager: fileManager)
+        try createProtectedDirectory(securityOperationsDirectory, fileManager: fileManager)
+    }
+
+
+    private nonisolated func createProtectedDirectory(_ url: URL, fileManager: FileManager) throws {
+        try fileManager.createDirectory(
+            at: url,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
     }
 }

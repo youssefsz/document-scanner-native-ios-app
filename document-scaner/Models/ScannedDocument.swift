@@ -14,6 +14,8 @@ nonisolated struct ScannedDocument: Identifiable, Codable, Hashable, Sendable {
     let pdfFilename: String
     let previewFilename: String
     let folderID: UUID?
+    let protection: DocumentProtection
+    let protectionFormatVersion: Int16
 
     nonisolated init(
         id: UUID = UUID(),
@@ -22,7 +24,9 @@ nonisolated struct ScannedDocument: Identifiable, Codable, Hashable, Sendable {
         pageCount: Int,
         pdfFilename: String,
         previewFilename: String,
-        folderID: UUID? = nil
+        folderID: UUID? = nil,
+        protection: DocumentProtection = .standard,
+        protectionFormatVersion: Int16 = 0
     ) {
         self.id = id
         self.title = title
@@ -31,22 +35,30 @@ nonisolated struct ScannedDocument: Identifiable, Codable, Hashable, Sendable {
         self.pdfFilename = pdfFilename
         self.previewFilename = previewFilename
         self.folderID = folderID
+        self.protection = protection
+        self.protectionFormatVersion = protectionFormatVersion
     }
 
     nonisolated var pdfURL: URL {
-        StoragePaths.production.filesDirectory.appendingPathComponent(pdfFilename, isDirectory: false)
+        assetDirectory(in: .production).appendingPathComponent(pdfFilename, isDirectory: false)
     }
 
     nonisolated var previewURL: URL {
-        StoragePaths.production.filesDirectory.appendingPathComponent(previewFilename, isDirectory: false)
+        assetDirectory(in: .production).appendingPathComponent(previewFilename, isDirectory: false)
     }
 
     nonisolated func pdfURL(in paths: StoragePaths) -> URL {
-        paths.filesDirectory.appendingPathComponent(pdfFilename, isDirectory: false)
+        assetDirectory(in: paths).appendingPathComponent(pdfFilename, isDirectory: false)
     }
 
     nonisolated func previewURL(in paths: StoragePaths) -> URL {
-        paths.filesDirectory.appendingPathComponent(previewFilename, isDirectory: false)
+        assetDirectory(in: paths).appendingPathComponent(previewFilename, isDirectory: false)
+    }
+
+    nonisolated var isSecure: Bool { protection != .standard }
+
+    private nonisolated func assetDirectory(in paths: StoragePaths) -> URL {
+        isSecure ? paths.vaultDirectory : paths.filesDirectory
     }
 }
 

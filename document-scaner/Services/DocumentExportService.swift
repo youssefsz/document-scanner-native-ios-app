@@ -12,6 +12,7 @@ struct PreparedDocumentExport: Sendable {
     let quality: DocumentExportQuality
     let url: URL
     let fileSizeBytes: Int64
+    let isPasswordProtected: Bool
 
     var filename: String {
         url.lastPathComponent
@@ -27,6 +28,9 @@ enum DocumentExportError: LocalizedError {
     case sourceDocumentUnreadable
     case pageRenderFailed
     case exportCreationFailed
+    case secureSourceRequiresAuthorization
+    case invalidPasswordConfiguration
+    case encryptedExportVerificationFailed
 
     var errorDescription: String? {
         switch self {
@@ -38,6 +42,12 @@ enum DocumentExportError: LocalizedError {
             "The app could not prepare one or more pages for export."
         case .exportCreationFailed:
             "The app could not create the exported PDF."
+        case .secureSourceRequiresAuthorization:
+            "Unlock the secure folder before exporting this document."
+        case .invalidPasswordConfiguration:
+            "The generated PDF passwords are invalid."
+        case .encryptedExportVerificationFailed:
+            "The password-protected PDF failed its security check and was not shared."
         }
     }
 }
@@ -71,6 +81,35 @@ actor DocumentExportService {
         cachedExports[document.id] = documentExports
 
         return export
+    }
+
+    func prepareExport(
+        for document: ScannedDocument,
+        configuration: PDFExportConfiguration,
+        authorizedSourceData: Data? = nil
+    ) async throws -> PreparedDocumentExport {
+        let unprotectedExport: PreparedDocumentExport
+        if configuration.sourceProtection == .standard {
+            unprotectedExport = try await prepareExport(for: document, quality: configuration.quality)
+        } else {
+            guard let authorizedSourceData,
+                  let sourceDocument = PDFDocument(data: authorizedSourceData),
+                  sourceDocument.pageCount > 0 else {
+                throw DocumentExportError.secureSourceRequiresAuthorization
+            }
+            unprotectedExport = try await prepareUncachedSecureSourceExport(
+                for: document,
+                quality: configuration.quality,
+                sourceDocument: sourceDocument
+            )
+        }
+
+        guard configuration.requiresPassword else { return unprotectedExport }
+        return try passwordProtectedExport(
+            from: unprotectedExport,
+            for: document,
+            passwords: configuration.passwords
+        )
     }
 
     func removeTemporaryExports(for document: ScannedDocument) {
@@ -120,7 +159,121 @@ actor DocumentExportService {
             to: exportURL
         )
         let fileSize = try fileSizeBytes(for: exportURL)
-        return PreparedDocumentExport(quality: quality, url: exportURL, fileSizeBytes: fileSize)
+        return PreparedDocumentExport(
+            quality: quality,
+            url: exportURL,
+            fileSizeBytes: fileSize,
+            isPasswordProtected: false
+        )
+    }
+
+    private func prepareUncachedSecureSourceExport(
+        for document: ScannedDocument,
+        quality: DocumentExportQuality,
+        sourceDocument: PDFDocument
+    ) async throws -> PreparedDocumentExport {
+        let directory = temporaryExportsDirectory
+            .appendingPathComponent(document.id.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        let url = directory.appendingPathComponent(exportFilename(for: document, quality: quality))
+        try await writeExport(quality: quality, from: sourceDocument, to: url)
+        try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+        return PreparedDocumentExport(
+            quality: quality,
+            url: url,
+            fileSizeBytes: try fileSizeBytes(for: url),
+            isPasswordProtected: false
+        )
+    }
+
+    private func passwordProtectedExport(
+        from source: PreparedDocumentExport,
+        for document: ScannedDocument,
+        passwords: PDFPasswordPair
+    ) throws -> PreparedDocumentExport {
+        let userPassword = passwords.pdfPassword
+        guard !userPassword.isEmpty,
+              !passwords.ownerPassword.isEmpty,
+              userPassword != passwords.ownerPassword,
+              userPassword.utf8.count < 32 else {
+            throw DocumentExportError.invalidPasswordConfiguration
+        }
+        guard let sourceDocument = PDFDocument(url: source.url), sourceDocument.pageCount > 0 else {
+            throw DocumentExportError.sourceDocumentUnreadable
+        }
+
+        let expectedPageCount = sourceDocument.pageCount
+        let expectedText = sourceDocument.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let protectedDirectory = source.url.deletingLastPathComponent()
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try fileManager.createDirectory(
+            at: protectedDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        let protectedURL = protectedDirectory.appendingPathComponent(
+            DocumentTitleFormatter.exportFilename(for: document.title, quality: source.quality)
+        )
+        let options: [PDFDocumentWriteOption: Any] = [
+            .ownerPasswordOption: passwords.ownerPassword as NSString,
+            .userPasswordOption: userPassword as NSString
+        ]
+        guard sourceDocument.write(to: protectedURL, withOptions: options) else {
+            throw DocumentExportError.exportCreationFailed
+        }
+        try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: protectedURL.path)
+
+        do {
+            try verifyPasswordProtectedExport(
+                at: protectedURL,
+                expectedPageCount: expectedPageCount,
+                expectedText: expectedText,
+                userPassword: userPassword
+            )
+        } catch {
+            try? fileManager.removeItem(at: protectedURL)
+            throw error
+        }
+        return PreparedDocumentExport(
+            quality: source.quality,
+            url: protectedURL,
+            fileSizeBytes: try fileSizeBytes(for: protectedURL),
+            isPasswordProtected: true
+        )
+    }
+
+    private func verifyPasswordProtectedExport(
+        at url: URL,
+        expectedPageCount: Int,
+        expectedText: String?,
+        userPassword: String
+    ) throws {
+        guard let lockedDocument = PDFDocument(url: url),
+              lockedDocument.isEncrypted,
+              lockedDocument.isLocked else {
+            throw DocumentExportError.encryptedExportVerificationFailed
+        }
+        guard let wrongPasswordDocument = PDFDocument(url: url),
+              !wrongPasswordDocument.unlock(withPassword: "WRONG-PASSWORD") else {
+            throw DocumentExportError.encryptedExportVerificationFailed
+        }
+        guard let unlockedDocument = PDFDocument(url: url),
+              unlockedDocument.unlock(withPassword: userPassword),
+              !unlockedDocument.isLocked,
+              unlockedDocument.pageCount == expectedPageCount else {
+            throw DocumentExportError.encryptedExportVerificationFailed
+        }
+        if let expectedText, !expectedText.isEmpty {
+            let actualText = unlockedDocument.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard actualText == expectedText else {
+                throw DocumentExportError.encryptedExportVerificationFailed
+            }
+        }
     }
 
     private func writeExport(
