@@ -11,7 +11,7 @@ import UIKit
 @MainActor
 final class DocumentLibrary: ObservableObject {
     @Published private(set) var documents: [ScannedDocument] = []
-    @Published private(set) var isLoading = false
+    @Published private(set) var isLoading = true
     @Published var activeError: LibraryError?
 
     private let store: DocumentStore

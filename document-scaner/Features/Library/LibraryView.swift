@@ -151,6 +151,7 @@ struct LibraryView: View {
                 }
             )
             .ignoresSafeArea()
+            .interactiveDismissDisabled()
         }
         .sheet(isPresented: $isNamingPendingScan) {
             DocumentTitleEditorSheet(
