@@ -123,6 +123,12 @@ struct DocumentThumbnail: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let cachedImage = ThumbnailPipeline.shared.cachedImage(
+                for: url,
+                pointSize: proxy.size,
+                scale: UIScreen.main.scale
+            )
+
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
@@ -136,19 +142,14 @@ struct DocumentThumbnail: View {
                         )
                     )
 
-                switch phase {
-                case .loaded(let image):
+                if let image = phase.image ?? cachedImage {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
                         .transition(reduceMotion ? .identity : .opacity)
-                case .loading:
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel("Loading preview")
-                case .unavailable:
+                } else if phase.isUnavailable {
                     VStack(spacing: 10) {
                         Image(systemName: "doc.text.image")
                             .font(.system(size: 38))
@@ -158,12 +159,27 @@ struct DocumentThumbnail: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Loading preview")
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
             .task(id: ThumbnailRequest(url: url, size: proxy.size)) {
-                phase = .loading
+                if let cachedImage = ThumbnailPipeline.shared.cachedImage(
+                    for: url,
+                    pointSize: proxy.size,
+                    scale: UIScreen.main.scale
+                ) {
+                    phase = .loaded(cachedImage)
+                    return
+                }
+
+                if phase.image == nil {
+                    phase = .loading
+                }
                 let image = await ThumbnailPipeline.shared.image(
                     for: url,
                     pointSize: proxy.size,
@@ -189,6 +205,16 @@ private enum ThumbnailPhase {
     case loading
     case loaded(UIImage)
     case unavailable
+
+    var image: UIImage? {
+        guard case .loaded(let image) = self else { return nil }
+        return image
+    }
+
+    var isUnavailable: Bool {
+        if case .unavailable = self { return true }
+        return false
+    }
 }
 
 private struct ThumbnailRequest: Equatable {

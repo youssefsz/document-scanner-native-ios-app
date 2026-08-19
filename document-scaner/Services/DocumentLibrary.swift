@@ -11,6 +11,8 @@ final class DocumentLibrary: ObservableObject {
     @Published private(set) var loadState: LibraryLoadState = .initialLoading
     @Published private(set) var activeOperations: Set<LibraryOperation> = []
     @Published private(set) var mutationsEnabled = false
+    @Published private(set) var isDocumentSearchPending = false
+    @Published private(set) var isFolderSearchPending = false
     @Published var activeError: LibraryError?
     @Published var selectedSection: LibrarySection = .library
     @Published var librarySearchQuery = ""
@@ -44,6 +46,10 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func reload() async {
+        documentSearchTask?.cancel()
+        folderSearchTask?.cancel()
+        isDocumentSearchPending = false
+        isFolderSearchPending = false
         loadState = .initialLoading
         activeError = nil
 
@@ -76,11 +82,25 @@ final class DocumentLibrary: ObservableObject {
 
     func updateLibrarySearch(_ query: String) {
         librarySearchQuery = query
+        if LibraryTextNormalizer.normalize(query).isEmpty {
+            documentSearchTask?.cancel()
+            isDocumentSearchPending = false
+            documents = allDocuments
+            loadState = allDocuments.isEmpty && allFolders.isEmpty ? .empty : .loaded
+            return
+        }
         scheduleDocumentSearch(immediate: false)
     }
 
     func updateFolderSearch(_ query: String) {
         folderSearchQuery = query
+        if LibraryTextNormalizer.normalize(query).isEmpty {
+            folderSearchTask?.cancel()
+            isFolderSearchPending = false
+            folders = allFolders
+            loadState = allDocuments.isEmpty && allFolders.isEmpty ? .empty : .loaded
+            return
+        }
         scheduleFolderSearch(immediate: false)
     }
 
@@ -234,6 +254,10 @@ final class DocumentLibrary: ObservableObject {
     }
 
     private func refreshAll() async throws {
+        documentSearchTask?.cancel()
+        folderSearchTask?.cancel()
+        isDocumentSearchPending = false
+        isFolderSearchPending = false
         async let fetchedDocuments = repository.fetchDocuments(scope: .all, query: librarySearchQuery, sort: sortOrder)
         async let fetchedAllDocuments = repository.fetchDocuments(scope: .all, query: "", sort: sortOrder)
         async let fetchedFolders = repository.fetchFolders(query: folderSearchQuery)
@@ -248,14 +272,20 @@ final class DocumentLibrary: ObservableObject {
     private func scheduleDocumentSearch(immediate: Bool) {
         guard hasLoaded else { return }
         documentSearchTask?.cancel()
+        isDocumentSearchPending = true
         let query = librarySearchQuery
         documentSearchTask = Task { [weak self] in
             if !immediate { try? await Task.sleep(nanoseconds: 250_000_000) }
             guard !Task.isCancelled, let self else { return }
             do {
-                self.documents = try await self.repository.fetchDocuments(scope: .all, query: query, sort: self.sortOrder)
+                let results = try await self.repository.fetchDocuments(scope: .all, query: query, sort: self.sortOrder)
+                guard !Task.isCancelled else { return }
+                self.documents = results
+                self.isDocumentSearchPending = false
                 self.loadState = self.allDocuments.isEmpty && self.allFolders.isEmpty ? .empty : .loaded
             } catch {
+                guard !Task.isCancelled else { return }
+                self.isDocumentSearchPending = false
                 self.loadState = .failed(error.localizedDescription)
             }
         }
@@ -264,14 +294,20 @@ final class DocumentLibrary: ObservableObject {
     private func scheduleFolderSearch(immediate: Bool) {
         guard hasLoaded else { return }
         folderSearchTask?.cancel()
+        isFolderSearchPending = true
         let query = folderSearchQuery
         folderSearchTask = Task { [weak self] in
             if !immediate { try? await Task.sleep(nanoseconds: 250_000_000) }
             guard !Task.isCancelled, let self else { return }
             do {
-                self.folders = try await self.repository.fetchFolders(query: query)
+                let results = try await self.repository.fetchFolders(query: query)
+                guard !Task.isCancelled else { return }
+                self.folders = results
+                self.isFolderSearchPending = false
                 self.loadState = self.allDocuments.isEmpty && self.allFolders.isEmpty ? .empty : .loaded
             } catch {
+                guard !Task.isCancelled else { return }
+                self.isFolderSearchPending = false
                 self.loadState = .failed(error.localizedDescription)
             }
         }

@@ -160,14 +160,17 @@ final class ThumbnailPipelineTests: XCTestCase {
         try XCTUnwrap(image.jpegData(compressionQuality: 0.9)).write(to: url)
 
         let pipeline = ThumbnailPipeline(costLimit: 8 * 1_024 * 1_024)
+        XCTAssertNil(pipeline.cachedImage(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2))
         let loaded = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
         let first = try XCTUnwrap(loaded)
+        XCTAssertNotNil(pipeline.cachedImage(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2))
         _ = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
 
         XCTAssertLessThanOrEqual(max(first.size.width * first.scale, first.size.height * first.scale), 200)
         let cachedDecodeCount = await pipeline.diagnosticsDecodeCount()
         XCTAssertEqual(cachedDecodeCount, 1)
         await pipeline.clearCache()
+        XCTAssertNil(pipeline.cachedImage(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2))
         _ = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
         let clearedDecodeCount = await pipeline.diagnosticsDecodeCount()
         XCTAssertEqual(clearedDecodeCount, 2)

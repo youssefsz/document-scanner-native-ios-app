@@ -117,6 +117,10 @@ struct LibraryView: View {
         .animation(selectionAnimation, value: isSelectionMode)
         .animation(selectionAnimation, value: selectedDocumentIDs)
         .animation(bottomAccessoryAnimation, value: library.selectedSection)
+        .animation(searchResultsAnimation, value: library.documents.map(\.id))
+        .animation(searchResultsAnimation, value: library.folders.map(\.id))
+        .animation(searchResultsAnimation, value: library.isDocumentSearchPending)
+        .animation(searchResultsAnimation, value: library.isFolderSearchPending)
         .task {
             library.updateSortOrder(rawValue: documentSortOrder)
             await library.loadIfNeeded()
@@ -277,16 +281,22 @@ struct LibraryView: View {
     @ViewBuilder
     private func documentRootContent(columns: [GridItem]) -> some View {
         if displayedDocuments.isEmpty {
-            AppUnavailableStateView(
-                title: library.librarySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Documents Yet" : "No Results",
-                systemImage: library.librarySearchQuery.isEmpty ? "doc.viewfinder" : "magnifyingglass",
-                description: library.librarySearchQuery.isEmpty
-                    ? "Scan paper documents and the app will save them as PDFs in a local library."
-                    : "No document titles match your search."
-            )
-            .frame(maxWidth: .infinity)
-            .padding(.top, 80)
-            .padding(.horizontal, 24)
+            if library.isDocumentSearchPending {
+                searchLoadingState(title: "Searching Documents…")
+                    .transition(.opacity)
+            } else {
+                AppUnavailableStateView(
+                    title: library.librarySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Documents Yet" : "No Results",
+                    systemImage: library.librarySearchQuery.isEmpty ? "doc.viewfinder" : "magnifyingglass",
+                    description: library.librarySearchQuery.isEmpty
+                        ? "Scan paper documents and the app will save them as PDFs in a local library."
+                        : "No document titles match your search."
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.top, 80)
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
         } else {
             LazyVGrid(columns: columns, alignment: .center, spacing: gridSpacing) {
                 ForEach(displayedDocuments) { document in
@@ -303,6 +313,7 @@ struct LibraryView: View {
             .padding(.horizontal, horizontalPadding)
             .padding(.top, 20)
             .padding(.bottom, 140)
+            .transition(.opacity)
         }
     }
 
@@ -343,23 +354,29 @@ struct LibraryView: View {
     @ViewBuilder
     private func folderRootContent(columns: [GridItem]) -> some View {
         if library.folders.isEmpty {
-            VStack(spacing: 22) {
-                AppUnavailableStateView(
-                    title: library.folderSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Folders Yet" : "No Results",
-                    systemImage: library.folderSearchQuery.isEmpty ? "folder" : "magnifyingglass",
-                    description: library.folderSearchQuery.isEmpty
-                        ? "Create a folder to organize documents without moving their saved files."
-                        : "No folder names match your search."
-                )
+            if library.isFolderSearchPending {
+                searchLoadingState(title: "Searching Folders…")
+                    .transition(.opacity)
+            } else {
+                VStack(spacing: 22) {
+                    AppUnavailableStateView(
+                        title: library.folderSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Folders Yet" : "No Results",
+                        systemImage: library.folderSearchQuery.isEmpty ? "folder" : "magnifyingglass",
+                        description: library.folderSearchQuery.isEmpty
+                            ? "Create a folder to organize documents without moving their saved files."
+                            : "No folder names match your search."
+                    )
 
-                if library.folderSearchQuery.isEmpty {
-                    Button("New Folder") { isShowingNewFolderSheet = true }
-                        .buttonStyle(.borderedProminent)
+                    if library.folderSearchQuery.isEmpty {
+                        Button("New Folder") { isShowingNewFolderSheet = true }
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 80)
+                .padding(.horizontal, 24)
+                .transition(.opacity)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 80)
-            .padding(.horizontal, 24)
         } else {
             LazyVGrid(columns: columns, alignment: .center, spacing: gridSpacing) {
                 ForEach(library.folders) { summary in
@@ -386,7 +403,16 @@ struct LibraryView: View {
             .padding(.horizontal, horizontalPadding)
             .padding(.top, 20)
             .padding(.bottom, 140)
+            .transition(.opacity)
         }
+    }
+
+    private func searchLoadingState(title: String) -> some View {
+        ProgressView(title)
+            .controlSize(.regular)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 100)
+            .accessibilityLabel(title)
     }
 
     private func recoverableState(
@@ -487,7 +513,9 @@ struct LibraryView: View {
                 .padding(.bottom, 24)
                 .transition(bottomAccessoryTransition)
             } else {
-                floatingScanButton
+                SearchAwareScanAccessory {
+                    floatingScanButton
+                }
             }
         }
     }
@@ -635,6 +663,10 @@ struct LibraryView: View {
 
     private var bottomAccessoryAnimation: Animation? {
         accessibilityReduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86)
+    }
+
+    private var searchResultsAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: 0.2)
     }
 
     private var bottomAccessoryTransition: AnyTransition {
@@ -1145,7 +1177,9 @@ private struct AddDocumentsToFolderSheet: View {
     let onAdd: @MainActor (Set<UUID>) async -> String?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var query = ""
+    @State private var debouncedQuery = ""
     @State private var selectedDocumentIDs: Set<UUID> = []
     @State private var isAdding = false
     @State private var addError: String?
@@ -1160,6 +1194,10 @@ private struct AddDocumentsToFolderSheet: View {
                         description: "There are no other documents available to add to this folder."
                     )
                     .padding(.horizontal, 24)
+                } else if isSearchPending, filteredDocuments.isEmpty {
+                    ProgressView("Searching Documents…")
+                        .controlSize(.regular)
+                        .transition(.opacity)
                 } else if filteredDocuments.isEmpty {
                     AppUnavailableStateView(
                         title: "No Results",
@@ -1167,11 +1205,13 @@ private struct AddDocumentsToFolderSheet: View {
                         description: "No document titles match your search."
                     )
                     .padding(.horizontal, 24)
+                    .transition(.opacity)
                 } else {
                     List(filteredDocuments) { document in
                         documentRow(document)
                     }
                     .listStyle(.insetGrouped)
+                    .transition(.opacity)
                 }
             }
             .navigationTitle("Add to \(folderName)")
@@ -1197,6 +1237,9 @@ private struct AddDocumentsToFolderSheet: View {
             }
         }
         .interactiveDismissDisabled(isAdding)
+        .task(id: query) {
+            await updateDebouncedQuery()
+        }
         .alert("Couldn’t Add Documents", isPresented: addErrorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -1205,11 +1248,36 @@ private struct AddDocumentsToFolderSheet: View {
     }
 
     private var filteredDocuments: [ScannedDocument] {
-        let normalizedQuery = LibraryTextNormalizer.normalize(query)
+        let normalizedQuery = LibraryTextNormalizer.normalize(debouncedQuery)
         guard !normalizedQuery.isEmpty else { return documents }
         return documents.filter {
             LibraryTextNormalizer.normalize($0.title).contains(normalizedQuery)
         }
+    }
+
+    private var isSearchPending: Bool {
+        LibraryTextNormalizer.normalize(query) != LibraryTextNormalizer.normalize(debouncedQuery)
+    }
+
+    @MainActor
+    private func updateDebouncedQuery() async {
+        let submittedQuery = LibraryTextNormalizer.ownedCopy(query)
+        if LibraryTextNormalizer.normalize(submittedQuery).isEmpty {
+            withAnimation(searchAnimation) {
+                debouncedQuery = ""
+            }
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
+        withAnimation(searchAnimation) {
+            debouncedQuery = submittedQuery
+        }
+    }
+
+    private var searchAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: 0.2)
     }
 
     private var addButtonTitle: String {
@@ -1287,9 +1355,11 @@ private struct FolderDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @EnvironmentObject private var library: DocumentLibrary
     @State private var documents: [ScannedDocument] = []
     @State private var query = ""
+    @State private var debouncedQuery = ""
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedDocument: ScannedDocument?
@@ -1321,8 +1391,8 @@ private struct FolderDetailView: View {
                 .ignoresSafeArea()
 
             ScrollView {
-                if isLoading {
-                    ProgressView("Loading folder…")
+                if documents.isEmpty, isFolderSearchPending {
+                    ProgressView(folderSearchLoadingTitle)
                         .padding(.top, 100)
                 } else if let errorMessage {
                     AppUnavailableStateView(title: "Folder Unavailable", systemImage: "exclamationmark.triangle", description: errorMessage)
@@ -1358,6 +1428,8 @@ private struct FolderDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(folderSearchAnimation, value: documents.map(\.id))
+        .animation(folderSearchAnimation, value: isFolderSearchPending)
         .navigationTitle(isSelectionMode ? "\(selectedDocumentIDs.count) Selected" : displayName)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search document titles")
@@ -1417,10 +1489,11 @@ private struct FolderDetailView: View {
                 }
             }
         }
-        .task(id: FolderDetailRequest(folderID: folder.id, query: query, reloadToken: reloadToken)) {
-            if !query.isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
-            guard !Task.isCancelled else { return }
-            await loadDocuments()
+        .task(id: query) {
+            await updateDebouncedFolderQuery()
+        }
+        .task(id: FolderDetailRequest(folderID: folder.id, query: debouncedQuery, reloadToken: reloadToken)) {
+            await loadDocuments(query: debouncedQuery)
         }
         .onChange(of: library.allDocuments) { _ in reloadToken = UUID() }
         .fullScreenCover(item: $selectedDocument) { document in
@@ -1515,14 +1588,48 @@ private struct FolderDetailView: View {
         return Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: count)
     }
 
-    private func loadDocuments() async {
+    private var isFolderSearchPending: Bool {
+        isLoading || LibraryTextNormalizer.normalize(query) != LibraryTextNormalizer.normalize(debouncedQuery)
+    }
+
+    private var folderSearchLoadingTitle: String {
+        LibraryTextNormalizer.normalize(query).isEmpty ? "Loading Documents…" : "Searching Documents…"
+    }
+
+    private var folderSearchAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: 0.2)
+    }
+
+    @MainActor
+    private func updateDebouncedFolderQuery() async {
+        let submittedQuery = LibraryTextNormalizer.ownedCopy(query)
+        if LibraryTextNormalizer.normalize(submittedQuery).isEmpty {
+            isLoading = documents.isEmpty
+            withAnimation(folderSearchAnimation) {
+                debouncedQuery = ""
+            }
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
+        isLoading = documents.isEmpty
+        withAnimation(folderSearchAnimation) {
+            debouncedQuery = submittedQuery
+        }
+    }
+
+    private func loadDocuments(query submittedQuery: String) async {
         isLoading = documents.isEmpty
         do {
-            documents = try await library.queryDocuments(scope: .folder(folder.id), query: query)
+            let results = try await library.queryDocuments(scope: .folder(folder.id), query: submittedQuery)
+            guard !Task.isCancelled else { return }
+            documents = results
             errorMessage = nil
             selectedDocumentIDs.formIntersection(Set(documents.map(\.id)))
             if selectedDocumentIDs.isEmpty { isSelectionMode = false }
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
         isLoading = false
@@ -1661,6 +1768,30 @@ private struct FolderDetailRequest: Equatable {
     let folderID: UUID
     let query: String
     let reloadToken: UUID
+}
+
+private struct SearchAwareScanAccessory<Content: View>: View {
+    @Environment(\.isSearching) private var isSearching
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        Group {
+            if !isSearching {
+                content
+            }
+        }
+        .animation(searchAnimation, value: isSearching)
+    }
+
+    private var searchAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86)
+    }
 }
 
 private extension View {
