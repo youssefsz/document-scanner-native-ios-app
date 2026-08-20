@@ -70,11 +70,19 @@ struct NewFolderSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(action: save) {
-                        if isSaving {
-                            AppToolbarProgressView(accessibilityLabel: "Creating folder")
-                        } else {
+                        ZStack {
                             Text("Create")
+                                .hidden()
+
+                            if isSaving {
+                                AppToolbarProgressView(accessibilityLabel: "Creating folder")
+                                    .accessibilityHidden(true)
+                            } else {
+                                Text("Create")
+                            }
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(isSaving ? "Creating folder" : "Create")
                     }
                     .disabled(validation(name) != nil || isSaving)
                 }
