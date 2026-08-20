@@ -65,7 +65,6 @@ struct ProPaywallView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: heroSize, height: heroSize)
-                        .padding(.top, 8)
                         .accessibilityHidden(true)
 
                     VStack(spacing: 8) {
@@ -129,7 +128,7 @@ struct ProPaywallView: View {
     }
 
     private var benefits: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 10) {
             BenefitRow(
                 imageName: "ProSecureFolderIcon",
                 title: "Secure folders",
