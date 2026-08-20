@@ -27,23 +27,35 @@ struct DocumentScannerSheet: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    static func dismantleUIViewController(
+        _ uiViewController: VNDocumentCameraViewController,
+        coordinator: Coordinator
+    ) {
+        uiViewController.delegate = nil
+    }
 }
 
 extension DocumentScannerSheet {
     final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
-        private let parent: DocumentScannerSheet
+        fileprivate var parent: DocumentScannerSheet
+        private var isFinishing = false
 
         init(parent: DocumentScannerSheet) {
             self.parent = parent
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            parent.onCancel()
+            finish(controller, completion: parent.onCancel)
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
-            parent.onError(error)
+            finish(controller) { [parent] in
+                parent.onError(error)
+            }
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
@@ -54,7 +66,20 @@ extension DocumentScannerSheet {
                 pages.append(scan.imageOfPage(at: pageIndex))
             }
 
-            parent.onComplete(pages)
+            finish(controller) { [parent] in
+                parent.onComplete(pages)
+            }
+        }
+
+        private func finish(
+            _ controller: VNDocumentCameraViewController,
+            completion: @escaping () -> Void
+        ) {
+            guard !isFinishing else { return }
+            isFinishing = true
+
+            controller.delegate = nil
+            controller.dismiss(animated: true, completion: completion)
         }
     }
 }

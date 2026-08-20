@@ -264,6 +264,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
     private let pageBackgroundView = UIView()
     private var currentImageIdentifier: ObjectIdentifier?
     private var isZoomed = false
+    private var needsInitialPositioning = false
     private var pageInsets: UIEdgeInsets = .zero
     private let shadowPadding: CGFloat = 28
 
@@ -300,7 +301,10 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         if currentImageIdentifier != identifier {
             currentImageIdentifier = identifier
             imageView.image = image
-            resetZoom(animated: false, notify: false)
+            isZoomed = false
+            scrollView.panGestureRecognizer.isEnabled = false
+            needsInitialPositioning = true
+            pageCanvasView.isHidden = true
             needsLayoutUpdate = true
         }
 
@@ -349,6 +353,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         addSubview(scrollView)
 
         pageCanvasView.backgroundColor = .clear
+        pageCanvasView.isHidden = true
         scrollView.addSubview(pageCanvasView)
 
         pageBackgroundView.backgroundColor = .white
@@ -408,9 +413,14 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         }
 
         if !isZoomed {
-            resetZoom(animated: false, notify: false)
+            resetZoom(animated: false, notify: false, recenterImmediately: true)
         } else {
             updateContentInsets()
+        }
+
+        if needsInitialPositioning {
+            needsInitialPositioning = false
+            pageCanvasView.isHidden = false
         }
     }
 
@@ -428,9 +438,17 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         }
     }
 
-    private func resetZoom(animated: Bool, notify: Bool = true) {
+    private func resetZoom(
+        animated: Bool,
+        notify: Bool = true,
+        recenterImmediately: Bool = false
+    ) {
         scrollView.setZoomScale(scrollView.minimumZoomScale, animated: animated)
-        scheduleRecenterAtMinimumZoom()
+        if recenterImmediately {
+            recenterAtMinimumZoom()
+        } else {
+            scheduleRecenterAtMinimumZoom()
+        }
         scrollView.panGestureRecognizer.isEnabled = false
         if notify {
             setZoomState(false)
