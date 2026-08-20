@@ -143,6 +143,7 @@ private struct SecureFolderDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.requestProFeature) private var requestProFeature
     @EnvironmentObject private var library: DocumentLibrary
+    @EnvironmentObject private var proStore: ProStore
     @State private var documents: [ScannedDocument] = []
     @State private var query = ""
     @State private var isLoading = true
@@ -269,6 +270,7 @@ private struct SecureFolderDetailView: View {
                 },
                 onMove: moveSelection
             )
+            .proPaywallHost(store: proStore)
         }
         .sheet(isPresented: $showsAddDocuments) {
             AddDocumentsToFolderSheet(
@@ -328,7 +330,6 @@ private struct SecureFolderDetailView: View {
             Text("This removes the encrypted PDFs, previews, and titles from this device.")
         }
         .onDisappear { query = "" }
-        .proPaywallHost()
     }
 
     private var filteredDocuments: [ScannedDocument] {

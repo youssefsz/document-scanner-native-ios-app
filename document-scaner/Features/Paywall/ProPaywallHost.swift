@@ -13,8 +13,10 @@ extension EnvironmentValues {
 }
 
 extension View {
-    func proPaywallHost() -> some View {
-        modifier(ProPaywallHostModifier())
+    /// Owns Pro presentation for this view hierarchy. Passing the store explicitly
+    /// keeps sheet-to-sheet presentation independent of EnvironmentObject propagation.
+    func proPaywallHost(store: ProStore) -> some View {
+        modifier(ProPaywallHostModifier(store: store))
     }
 }
 
@@ -25,16 +27,20 @@ private struct PendingProFeatureRequest: Identifiable {
 }
 
 private struct ProPaywallHostModifier: ViewModifier {
-    @EnvironmentObject private var store: ProStore
+    @ObservedObject private var store: ProStore
     @State private var pendingRequest: PendingProFeatureRequest?
     @State private var isPaywallPresented = false
     @State private var shouldContinueAfterDismissal = false
+
+    init(store: ProStore) {
+        self.store = store
+    }
 
     func body(content: Content) -> some View {
         content
             .environment(\.requestProFeature, request)
             .sheet(isPresented: $isPaywallPresented, onDismiss: paywallDidDismiss) {
-                ProPaywallPresenter {
+                ProPaywallPresenter(store: store) {
                     shouldContinueAfterDismissal = true
                     isPaywallPresented = false
                 } onCancel: {
@@ -80,13 +86,19 @@ private struct ProPaywallHostModifier: ViewModifier {
 }
 
 private struct ProPaywallPresenter: View {
+    @ObservedObject private var store: ProStore
     let onGranted: () -> Void
     let onCancel: () -> Void
 
-    @EnvironmentObject private var store: ProStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isCompleting = false
     @State private var successKind: ProPaywallSuccessKind?
+
+    init(store: ProStore, onGranted: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.store = store
+        self.onGranted = onGranted
+        self.onCancel = onCancel
+    }
 
     var body: some View {
         ProPaywallView(
@@ -151,4 +163,3 @@ private struct ProPaywallPresenter: View {
         }
     }
 }
-

@@ -12,7 +12,6 @@ struct NewFolderSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.requestProFeature) private var requestProFeature
-    @EnvironmentObject private var proStore: ProStore
     @FocusState private var isFocused: Bool
     @State private var name = ""
     @State private var isSecure = false
@@ -36,8 +35,6 @@ struct NewFolderSheet: View {
                         set: { newValue in
                             if !newValue {
                                 isSecure = false
-                            } else if proStore.hasAccess(to: .secureFolder) {
-                                isSecure = true
                             } else {
                                 requestProFeature(.secureFolder) { isSecure = true }
                             }
@@ -89,7 +86,6 @@ struct NewFolderSheet: View {
             }
         }
         .interactiveDismissDisabled(isSaving)
-        .proPaywallHost()
         .task {
             isSecure = false
             isFocused = true
@@ -298,7 +294,6 @@ struct FolderPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.requestProFeature) private var requestProFeature
-    @EnvironmentObject private var proStore: ProStore
     @State private var showsNewFolder = false
     @State private var pendingSecureDestination: DocumentFolder?
 
@@ -335,7 +330,6 @@ struct FolderPickerSheet: View {
             }
         }
         .interactiveDismissDisabled(isMoving)
-        .proPaywallHost()
         .confirmationDialog(
             "Move and Secure?",
             isPresented: Binding(
@@ -381,12 +375,8 @@ struct FolderPickerSheet: View {
     ) -> some View {
         Button {
             if isSecure, let id, let folder = folders.first(where: { $0.id == id }) {
-                if proStore.hasAccess(to: .secureFolder) {
+                requestProFeature(.secureFolder) {
                     pendingSecureDestination = folder
-                } else {
-                    requestProFeature(.secureFolder) {
-                        pendingSecureDestination = folder
-                    }
                 }
             } else {
                 onMove(id)

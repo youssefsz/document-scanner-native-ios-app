@@ -108,7 +108,6 @@ struct DocumentExportSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .proPaywallHost()
         .task {
             onSelectionChange(selectedQuality)
         }
@@ -231,7 +230,6 @@ private struct ProPasswordToggle: View {
     let onChange: () -> Void
 
     @Environment(\.requestProFeature) private var requestProFeature
-    @EnvironmentObject private var proStore: ProStore
 
     var body: some View {
         Toggle("Require Password", isOn: Binding(
@@ -239,9 +237,6 @@ private struct ProPasswordToggle: View {
             set: { newValue in
                 if !newValue {
                     isOn = false
-                    changed()
-                } else if proStore.hasAccess(to: .passwordProtectedPDF) {
-                    isOn = true
                     changed()
                 } else {
                     isOn = false

@@ -14,6 +14,7 @@ struct FolderDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @EnvironmentObject private var library: DocumentLibrary
+    @EnvironmentObject private var proStore: ProStore
     @State private var documents: [ScannedDocument] = []
     @State private var query = ""
     @State private var debouncedQuery = ""
@@ -207,6 +208,7 @@ struct FolderDetailView: View {
                 },
                 onMove: moveSelection
             )
+            .proPaywallHost(store: proStore)
         }
         .sheet(isPresented: $showsRename) {
             FolderNameSheet(

@@ -24,9 +24,9 @@ struct document_scanerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .proPaywallHost(store: proStore)
                 .environmentObject(library)
                 .environmentObject(proStore)
-                .proPaywallHost()
                 .preferredColorScheme(useDarkMode ? .dark : .light)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task {

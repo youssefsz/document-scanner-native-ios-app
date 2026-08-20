@@ -9,6 +9,7 @@ import UIKit
 
 struct LibraryView: View {
     @EnvironmentObject private var library: DocumentLibrary
+    @EnvironmentObject private var proStore: ProStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -131,7 +132,6 @@ struct LibraryView: View {
         .animation(searchResultsAnimation, value: library.folders.map(\.id))
         .animation(searchResultsAnimation, value: library.isDocumentSearchPending)
         .animation(searchResultsAnimation, value: library.isFolderSearchPending)
-        .proPaywallHost()
         .task {
             library.updateSortOrder(rawValue: documentSortOrder)
             await library.loadIfNeeded()
@@ -190,6 +190,7 @@ struct LibraryView: View {
                     return (success, success ? nil : library.consumeActiveErrorMessage())
                 }
             )
+            .proPaywallHost(store: proStore)
         }
         .sheet(item: $folderSecurityChange) { request in
             FolderSecurityChangeSheet(
@@ -226,6 +227,7 @@ struct LibraryView: View {
                 },
                 onMove: moveSelectedDocuments
             )
+            .proPaywallHost(store: proStore)
         }
         .fullScreenCover(item: $selectedDocument) { document in
             DocumentDetailView(document: document)

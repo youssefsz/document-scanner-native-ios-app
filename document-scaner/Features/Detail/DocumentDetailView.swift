@@ -110,6 +110,7 @@ struct DocumentDetailView: View {
                     prepareShare(using: selectedExportQuality)
                 }
             )
+            .proPaywallHost(store: proStore)
         }
         .sheet(isPresented: $isShowingShareSheet, onDismiss: {
             shareItems = []

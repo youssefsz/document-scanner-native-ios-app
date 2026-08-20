@@ -164,7 +164,6 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .proPaywallHost()
         .onAppear {
             selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
         }
