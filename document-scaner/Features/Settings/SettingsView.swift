@@ -22,6 +22,10 @@ struct SettingsView: View {
     @State private var activeSupportDraft: SupportEmailDraft?
     @State private var isSupportFlowActive = false
     @State private var pendingSupportTopic: SupportTopic?
+#if DEBUG
+    @State private var isProPaywallPresented = false
+    @State private var proPreviewAlert: ProPreviewAlert?
+#endif
 
     private let supportDiagnosticsProvider: any SupportDiagnosticsProviding
     private let supportDraftBuilder: any SupportEmailDraftBuilding
@@ -36,6 +40,20 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+#if DEBUG
+            Section {
+                Button {
+                    isProPaywallPresented = true
+                } label: {
+                    Label("Preview Pro Paywall", systemImage: "crown.fill")
+                }
+            } header: {
+                Text("DocScanner Pro")
+            } footer: {
+                Text("Visual preview only. StoreKit and Pro ownership are not connected in this build.")
+            }
+#endif
+
             Section {
                 Toggle("Dark Mode", isOn: $useDarkMode)
             } header: {
@@ -125,8 +143,8 @@ struct SettingsView: View {
                     LegalDocumentView(document: .privacy)
                 }
 
-                NavigationLink("Terms of Use") {
-                    LegalDocumentView(document: .terms)
+                Link(destination: AppMetadata.standardEULAURL) {
+                    Label("Terms of Use", systemImage: "doc.text")
                 }
             } header: {
                 Text("About & Legal")
@@ -177,6 +195,31 @@ struct SettingsView: View {
                 )
             }
         }
+#if DEBUG
+        .sheet(isPresented: $isProPaywallPresented) {
+            ProPaywallView(
+                configuration: .preview,
+                onPurchase: {
+                    proPreviewAlert = .purchase
+                },
+                onRestore: {
+                    proPreviewAlert = .restore
+                },
+                onDismiss: {
+                    isProPaywallPresented = false
+                }
+            )
+            .alert(item: $proPreviewAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .cancel(Text("OK"))
+                )
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+#endif
         .sheet(isPresented: $isSupportSheetPresented, onDismiss: handleSupportTopicSheetDismissal) {
             SupportFeedbackSheet { topic in
                 pendingSupportTopic = topic
@@ -278,6 +321,33 @@ private enum SettingsAlert: String, Identifiable {
 
     var id: String { rawValue }
 }
+
+#if DEBUG
+private enum ProPreviewAlert: String, Identifiable {
+    case purchase
+    case restore
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .purchase:
+            "Purchase Preview"
+        case .restore:
+            "Restore Preview"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .purchase:
+            "StoreKit is not connected. This preview does not charge you or unlock DocScanner Pro."
+        case .restore:
+            "StoreKit is not connected. This preview does not restore or create a Pro entitlement."
+        }
+    }
+}
+#endif
 
 private struct OCRLanguageSelectionView: View {
     @Binding var selectedLanguageCodes: [String]
@@ -431,118 +501,58 @@ private struct LegalDocumentSection: Identifiable {
 
 private enum LegalDocumentKind {
     case privacy
-    case terms
 
     var title: String {
-        switch self {
-        case .privacy:
-            "Privacy Policy"
-        case .terms:
-            "Terms of Use"
-        }
+        "Privacy Policy"
     }
 
     var summary: String {
-        switch self {
-        case .privacy:
-            "This policy explains what information \(AppMetadata.appName) handles, how that information is used, and the choices you have."
-        case .terms:
-            "These terms govern your use of \(AppMetadata.appName) and explain the responsibilities that apply when you use the app."
-        }
+        "This policy explains what information \(AppMetadata.appName) handles, how that information is used, and the choices you have."
     }
 
     var sections: [LegalDocumentSection] {
-        switch self {
-        case .privacy:
-            [
-                LegalDocumentSection(
-                    title: "1. Information The App Handles",
-                    paragraphs: [
-                        "\(AppMetadata.appName) lets you scan paper documents, create PDF files, save document titles, and generate preview images. This information is stored locally on your device as part of the app's normal operation.",
-                        "If you contact support by email, you may also choose to send diagnostic details such as the app version, your iOS version, and any information you include in your message."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "2. How Information Is Used",
-                    paragraphs: [
-                        "The app uses the camera only when you choose to scan a document. Captured pages are used to create PDFs and preview images so you can view, organize, and share your files inside the app.",
-                        "Document titles and creation dates are used only to organize your library on-device."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "3. Storage And Sharing",
-                    paragraphs: [
-                        "Scanned documents, preview images, and related metadata are stored locally on your device in the app's application support directory.",
-                        "The app does not require user accounts, does not include third-party advertising or analytics SDKs, and does not upload your documents to developer-controlled servers.",
-                        "Documents are shared only when you explicitly choose a destination using the iOS share sheet or when you include information in a support email that you send voluntarily."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "4. Permissions",
-                    paragraphs: [
-                        "The app requests camera access so it can scan documents. If camera access is denied, scanning will not be available until permission is granted in iOS Settings."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "5. Retention And Deletion",
-                    paragraphs: [
-                        "Your documents remain on your device until you delete them or remove the app. When you delete a document inside the app, the associated PDF file and preview image are removed from local storage."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "6. Contact",
-                    paragraphs: [
-                        "If you have questions about this Privacy Policy, contact \(AppMetadata.creatorName) at \(AppMetadata.supportEmail) or visit \(AppMetadata.portfolioDisplayName)."
-                    ]
-                )
-            ]
-        case .terms:
-            [
-                LegalDocumentSection(
-                    title: "1. Acceptance Of Terms",
-                    paragraphs: [
-                        "By downloading or using \(AppMetadata.appName), you agree to these Terms of Use. If you do not agree, do not use the app."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "2. Permitted Use",
-                    paragraphs: [
-                        "\(AppMetadata.appName) is provided for scanning, organizing, viewing, and sharing documents on your own device. You may use the app only in compliance with applicable laws and regulations."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "3. Your Responsibilities",
-                    paragraphs: [
-                        "You are responsible for the documents and information you scan, store, export, or share through the app.",
-                        "You should review scanned documents before relying on them in legal, financial, medical, or other important contexts where accuracy matters."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "4. Availability And Changes",
-                    paragraphs: [
-                        "The app may be updated, improved, modified, or discontinued at any time. Features may change as the product evolves."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "5. Disclaimer",
-                    paragraphs: [
-                        "To the fullest extent permitted by law, the app is provided on an \"as is\" and \"as available\" basis without warranties of any kind, whether express or implied."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "6. Limitation Of Liability",
-                    paragraphs: [
-                        "To the fullest extent permitted by law, \(AppMetadata.creatorName) will not be liable for indirect, incidental, special, consequential, or punitive damages, or for loss of data, arising from your use of the app."
-                    ]
-                ),
-                LegalDocumentSection(
-                    title: "7. Contact",
-                    paragraphs: [
-                        "Questions about these Terms of Use can be sent to \(AppMetadata.supportEmail)."
-                    ]
-                )
-            ]
-        }
+        [
+            LegalDocumentSection(
+                title: "1. Information The App Handles",
+                paragraphs: [
+                    "\(AppMetadata.appName) lets you scan paper documents, create PDF files, save document titles, and generate preview images. This information is stored locally on your device as part of the app's normal operation.",
+                    "If you contact support by email, you may also choose to send diagnostic details such as the app version, your iOS version, and any information you include in your message."
+                ]
+            ),
+            LegalDocumentSection(
+                title: "2. How Information Is Used",
+                paragraphs: [
+                    "The app uses the camera only when you choose to scan a document. Captured pages are used to create PDFs and preview images so you can view, organize, and share your files inside the app.",
+                    "Document titles and creation dates are used only to organize your library on-device."
+                ]
+            ),
+            LegalDocumentSection(
+                title: "3. Storage And Sharing",
+                paragraphs: [
+                    "Scanned documents, preview images, and related metadata are stored locally on your device in the app's application support directory.",
+                    "The app does not require user accounts, does not include third-party advertising or analytics SDKs, and does not upload your documents to developer-controlled servers.",
+                    "Documents are shared only when you explicitly choose a destination using the iOS share sheet or when you include information in a support email that you send voluntarily."
+                ]
+            ),
+            LegalDocumentSection(
+                title: "4. Permissions",
+                paragraphs: [
+                    "The app requests camera access so it can scan documents. If camera access is denied, scanning will not be available until permission is granted in iOS Settings."
+                ]
+            ),
+            LegalDocumentSection(
+                title: "5. Retention And Deletion",
+                paragraphs: [
+                    "Your documents remain on your device until you delete them or remove the app. When you delete a document inside the app, the associated PDF file and preview image are removed from local storage."
+                ]
+            ),
+            LegalDocumentSection(
+                title: "6. Contact",
+                paragraphs: [
+                    "If you have questions about this Privacy Policy, contact \(AppMetadata.creatorName) at \(AppMetadata.supportEmail) or visit \(AppMetadata.portfolioDisplayName)."
+                ]
+            )
+        ]
     }
 }
 
@@ -602,6 +612,12 @@ private struct LegalDocumentView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct PrivacyPolicyView: View {
+    var body: some View {
+        LegalDocumentView(document: .privacy)
     }
 }
 

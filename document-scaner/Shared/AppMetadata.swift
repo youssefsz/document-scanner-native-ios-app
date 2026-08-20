@@ -13,6 +13,7 @@ enum AppMetadata {
     static let supportEmail = "dhibi.ywsf@gmail.com"
     static let legalEffectiveDate = "March 8, 2026"
     static let appStoreIDKey = "AppStoreID"
+    static let standardEULAURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     static var appName: String {
         if let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
