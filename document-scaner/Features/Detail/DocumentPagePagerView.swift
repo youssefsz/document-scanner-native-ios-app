@@ -78,7 +78,15 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         self.onZoomStateChange = onZoomStateChange
 
         syncPageViews(with: pages)
-        setCurrentPage(id: currentPageID ?? pageIDs.first, animated: false)
+        let requestedPageID = currentPageID
+            .flatMap { pageIDs.contains($0) ? $0 : nil } ?? pageIDs.first
+
+        // A drag updates the SwiftUI binding, which immediately calls configure again.
+        // Only reposition for a genuinely external page change; snapping here during
+        // an active gesture interrupts UIScrollView's paging animation.
+        if requestedPageID != self.currentPageID {
+            setCurrentPage(id: requestedPageID, animated: false)
+        }
         scrollView.isScrollEnabled = pages.count > 1 && zoomedPageID == nil
     }
 
@@ -100,6 +108,7 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceVertical = true
         scrollView.backgroundColor = .black
+        scrollView.contentInsetAdjustmentBehavior = .never
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
@@ -385,6 +394,10 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
             width: pageSize.width,
             height: pageSize.height
         )
+        pageBackgroundView.layer.shadowPath = UIBezierPath(
+            roundedRect: pageBackgroundView.bounds,
+            cornerRadius: pageBackgroundView.layer.cornerRadius
+        ).cgPath
         imageView.frame = pageBackgroundView.bounds
         scrollView.contentSize = canvasSize
         scrollView.minimumZoomScale = 1
