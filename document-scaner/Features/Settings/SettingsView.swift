@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var activeSupportDraft: SupportEmailDraft?
     @State private var isSupportFlowActive = false
     @State private var pendingSupportTopic: SupportTopic?
+    @State private var isV2OnboardingPresented = false
 
     private let supportDiagnosticsProvider: any SupportDiagnosticsProviding
     private let supportDraftBuilder: any SupportEmailDraftBuilding
@@ -101,6 +102,12 @@ struct SettingsView: View {
             }
 
             Section {
+                Button {
+                    isV2OnboardingPresented = true
+                } label: {
+                    Label("What's New in Version 2", systemImage: "sparkles")
+                }
+
                 NavigationLink("About This App") {
                     AboutAppView()
                 }
@@ -200,6 +207,12 @@ struct SettingsView: View {
                     activeAlert = .supportUnavailable
                 }
             }
+        }
+        .fullScreenCover(isPresented: $isV2OnboardingPresented) {
+            V2OnboardingView(mode: .replay) { _ in
+                isV2OnboardingPresented = false
+            }
+            .interactiveDismissDisabled()
         }
     }
 

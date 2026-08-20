@@ -16,6 +16,7 @@ enum AppPreferenceKey {
     nonisolated static let hasCreatedFirstDocument = "hasCreatedFirstDocument"
     nonisolated static let pendingReviewDocumentID = "pendingReviewDocumentID"
     nonisolated static let hasRequestedNativeReview = "hasRequestedNativeReview"
+    nonisolated static let lastSeenMajorIntroduction = "lastSeenMajorIntroduction"
 }
 
 enum DocumentSortOrder: String, CaseIterable, Identifiable {
