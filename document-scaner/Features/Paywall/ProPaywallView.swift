@@ -7,15 +7,36 @@ import SwiftUI
 import UIKit
 
 struct ProPaywallConfiguration: Equatable {
-    let displayPrice: String
+    let displayPrice: String?
+    let isLoadingProduct: Bool
     let isPurchasing: Bool
     let isRestoring: Bool
+    let isPending: Bool
+    let errorMessage: String?
+    let success: ProPaywallSuccessKind?
+
+    var disablesActions: Bool {
+        isLoadingProduct || isPurchasing || isRestoring || success != nil
+    }
+
+    var disablesDismissal: Bool {
+        isPurchasing || isRestoring || success != nil
+    }
 
     static let preview = ProPaywallConfiguration(
         displayPrice: "$14.99",
+        isLoadingProduct: false,
         isPurchasing: false,
-        isRestoring: false
+        isRestoring: false,
+        isPending: false,
+        errorMessage: nil,
+        success: nil
     )
+}
+
+enum ProPaywallSuccessKind: Equatable {
+    case purchase
+    case restore
 }
 
 struct ProPaywallView: View {
@@ -32,7 +53,14 @@ struct ProPaywallView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
+                if let success = configuration.success {
+                    successConfirmation(success)
+                        .frame(minHeight: 480)
+                        .frame(maxWidth: maximumContentWidth)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                } else {
+                    VStack(spacing: 0) {
                     Image("ProPaywallHero")
                         .resizable()
                         .scaledToFit()
@@ -60,14 +88,15 @@ struct ProPaywallView: View {
                     lifetimePromise
                         .padding(.top, 26)
                 }
-                .frame(maxWidth: maximumContentWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                    .frame(maxWidth: maximumContentWidth)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
             }
             .background(Color(.systemBackground).ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                purchaseFooter
+                if configuration.success == nil { purchaseFooter }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -77,10 +106,11 @@ struct ProPaywallView: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel("Close")
+                    .disabled(configuration.disablesDismissal)
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    restoreButton
+                    if configuration.success == nil { restoreButton }
                 }
             }
         }
@@ -131,11 +161,22 @@ struct ProPaywallView: View {
     }
 
     private var purchaseFooter: some View {
-        VStack(spacing: 6) {
-            Button(action: onPurchase) {
+        VStack(spacing: 8) {
+            if let message = statusMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(configuration.errorMessage == nil ? Color.secondary : Color.red)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                guard !configuration.disablesActions else { return }
+                onPurchase()
+            } label: {
                 HStack(spacing: 10) {
-                    if configuration.isPurchasing {
-                        AppProminentProgressView(accessibilityLabel: "Purchasing")
+                    if configuration.isPurchasing || configuration.isLoadingProduct {
+                        AppProminentProgressView(accessibilityLabel: configuration.isPurchasing ? "Purchasing" : "Loading")
                     }
 
                     Text(purchaseButtonTitle)
@@ -150,7 +191,8 @@ struct ProPaywallView: View {
             }
             .paywallProminentButtonStyle()
             .controlSize(.large)
-            .disabled(configuration.isPurchasing || configuration.isRestoring)
+            .disabled(configuration.isRestoring)
+            .allowsHitTesting(!configuration.disablesActions)
             .accessibilityLabel(purchaseAccessibilityLabel)
 
             Text("One-time purchase. No subscription.")
@@ -188,7 +230,7 @@ struct ProPaywallView: View {
                     .lineLimit(1)
             }
         }
-        .disabled(configuration.isPurchasing || configuration.isRestoring)
+        .disabled(configuration.disablesActions)
     }
 
     private var termsLink: some View {
@@ -206,15 +248,43 @@ struct ProPaywallView: View {
     }
 
     private var purchaseButtonTitle: String {
-        configuration.isPurchasing
-            ? "Purchasing…"
-            : "Unlock Pro for \(configuration.displayPrice)"
+        if configuration.isLoadingProduct { return "Loading..." }
+        if configuration.isPurchasing { return "Purchasing..." }
+        guard let displayPrice = configuration.displayPrice else { return "Retry" }
+        return "Unlock Pro for \(displayPrice)"
     }
 
     private var purchaseAccessibilityLabel: String {
-        configuration.isPurchasing
-            ? "Purchasing"
-            : "Unlock Pro for \(configuration.displayPrice). One-time purchase. No subscription."
+        if configuration.isLoadingProduct { return "Loading Pro purchase" }
+        if configuration.isPurchasing { return "Purchasing" }
+        guard let displayPrice = configuration.displayPrice else { return "Retry loading Pro purchase" }
+        return "Unlock Pro for \(displayPrice). One-time purchase. No subscription."
+    }
+
+    private var statusMessage: String? {
+        if configuration.isPending {
+            return "Purchase pending approval. Pro will unlock when Apple confirms it."
+        }
+        return configuration.errorMessage
+    }
+
+    private func successConfirmation(_ kind: ProPaywallSuccessKind) -> some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image("ProPurchaseSuccessIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+                .accessibilityHidden(true)
+            Text(kind == .purchase ? "Pro unlocked" : "Pro restored")
+                .font(.title.bold())
+                .accessibilityAddTraits(.isHeader)
+            Text(kind == .purchase ? "Lifetime access is ready." : "Your lifetime access is ready.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .multilineTextAlignment(.center)
     }
 
     private var heroSize: CGFloat {

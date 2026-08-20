@@ -1,0 +1,5 @@
+Config/LocalOverrides.xcconfig
+.env
+*.p8
+.DS_Store
+**/.DS_Store

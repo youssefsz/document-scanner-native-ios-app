@@ -16,4 +16,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(DocumentLibrary.preview)
+        .environmentObject(ProStore(productIdentifier: nil, startLifecycle: false))
 }

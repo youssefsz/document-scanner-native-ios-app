@@ -23,7 +23,7 @@ struct PreparedDocumentExport: Sendable {
     }
 }
 
-enum DocumentExportError: LocalizedError {
+enum DocumentExportError: LocalizedError, Equatable {
     case sourceFileMissing
     case sourceDocumentUnreadable
     case pageRenderFailed
@@ -31,6 +31,7 @@ enum DocumentExportError: LocalizedError {
     case secureSourceRequiresAuthorization
     case invalidPasswordConfiguration
     case encryptedExportVerificationFailed
+    case proAccessRequired
 
     var errorDescription: String? {
         switch self {
@@ -48,6 +49,8 @@ enum DocumentExportError: LocalizedError {
             "The generated PDF passwords are invalid."
         case .encryptedExportVerificationFailed:
             "The password-protected PDF failed its security check and was not shared."
+        case .proAccessRequired:
+            "DocScanner Pro is required to create a password-protected PDF."
         }
     }
 }
@@ -86,8 +89,12 @@ actor DocumentExportService {
     func prepareExport(
         for document: ScannedDocument,
         configuration: PDFExportConfiguration,
-        authorizedSourceData: Data? = nil
+        authorizedSourceData: Data? = nil,
+        proAccessGranted: Bool
     ) async throws -> PreparedDocumentExport {
+        if configuration.requiresPassword, !proAccessGranted {
+            throw DocumentExportError.proAccessRequired
+        }
         let unprotectedExport: PreparedDocumentExport
         if configuration.sourceProtection == .standard {
             unprotectedExport = try await prepareExport(for: document, quality: configuration.quality)

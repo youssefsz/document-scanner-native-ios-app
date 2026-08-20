@@ -10,6 +10,7 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var proStore: ProStore
 
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @AppStorage(AppPreferenceKey.defaultExportQuality) private var defaultExportQuality = DocumentExportQuality.high.rawValue
@@ -22,10 +23,6 @@ struct SettingsView: View {
     @State private var activeSupportDraft: SupportEmailDraft?
     @State private var isSupportFlowActive = false
     @State private var pendingSupportTopic: SupportTopic?
-#if DEBUG
-    @State private var isProPaywallPresented = false
-    @State private var proPreviewAlert: ProPreviewAlert?
-#endif
 
     private let supportDiagnosticsProvider: any SupportDiagnosticsProviding
     private let supportDraftBuilder: any SupportEmailDraftBuilding
@@ -40,19 +37,11 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-#if DEBUG
             Section {
-                Button {
-                    isProPaywallPresented = true
-                } label: {
-                    Label("Preview Pro Paywall", systemImage: "crown.fill")
-                }
-            } header: {
-                Text("DocScanner Pro")
-            } footer: {
-                Text("Visual preview only. StoreKit and Pro ownership are not connected in this build.")
+                proBanner
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
-#endif
 
             Section {
                 Toggle("Dark Mode", isOn: $useDarkMode)
@@ -175,6 +164,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .proPaywallHost()
         .onAppear {
             selectedOCRLanguageCodes = OCRPreferences.storedPreferredLanguageCodes()
         }
@@ -195,31 +185,6 @@ struct SettingsView: View {
                 )
             }
         }
-#if DEBUG
-        .sheet(isPresented: $isProPaywallPresented) {
-            ProPaywallView(
-                configuration: .preview,
-                onPurchase: {
-                    proPreviewAlert = .purchase
-                },
-                onRestore: {
-                    proPreviewAlert = .restore
-                },
-                onDismiss: {
-                    isProPaywallPresented = false
-                }
-            )
-            .alert(item: $proPreviewAlert) { alert in
-                Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    dismissButton: .cancel(Text("OK"))
-                )
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
-#endif
         .sheet(isPresented: $isSupportSheetPresented, onDismiss: handleSupportTopicSheetDismissal) {
             SupportFeedbackSheet { topic in
                 pendingSupportTopic = topic
@@ -242,6 +207,30 @@ struct SettingsView: View {
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    @ViewBuilder
+    private var proBanner: some View {
+        switch ProSettingsBannerMode(entitlementState: proStore.entitlementState) {
+        case .checking:
+            ProSettingsBanner(
+                systemImage: nil,
+                title: "Checking Pro access...",
+                detail: nil,
+                showsProgress: true,
+                showsChevron: false
+            )
+        case .owned:
+            ProSettingsBanner(
+                systemImage: "checkmark.seal.fill",
+                title: "DocScanner Pro",
+                detail: "Lifetime access unlocked",
+                showsProgress: false,
+                showsChevron: false
+            )
+        case .free:
+            ProSettingsBannerButton()
+        }
     }
 
     private func presentSupportTopics() {
@@ -322,32 +311,69 @@ private enum SettingsAlert: String, Identifiable {
     var id: String { rawValue }
 }
 
-#if DEBUG
-private enum ProPreviewAlert: String, Identifiable {
-    case purchase
-    case restore
+private struct ProSettingsBanner: View {
+    let systemImage: String?
+    let title: String
+    let detail: String?
+    let showsProgress: Bool
+    let showsChevron: Bool
 
-    var id: String { rawValue }
+    var body: some View {
+        HStack(spacing: 14) {
+            if showsProgress {
+                ProgressView()
+                    .tint(.white)
+                    .accessibilityHidden(true)
+            } else if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                    .accessibilityHidden(true)
+            }
 
-    var title: String {
-        switch self {
-        case .purchase:
-            "Purchase Preview"
-        case .restore:
-            "Restore Preview"
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                if let detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .opacity(0.88)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
         }
-    }
-
-    var message: String {
-        switch self {
-        case .purchase:
-            "StoreKit is not connected. This preview does not charge you or unlock DocScanner Pro."
-        case .restore:
-            "StoreKit is not connected. This preview does not restore or create a Pro entitlement."
-        }
+        .foregroundStyle(.white)
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 84)
+        .background(Color.blue, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
-#endif
+
+private struct ProSettingsBannerButton: View {
+    @Environment(\.requestProFeature) private var requestProFeature
+
+    var body: some View {
+        Button {
+            requestProFeature(.secureFolder) {}
+        } label: {
+            ProSettingsBanner(
+                systemImage: "lock.shield.fill",
+                title: "Unlock DocScanner Pro",
+                detail: "Secure folders and protected PDFs",
+                showsProgress: false,
+                showsChevron: true
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Unlock DocScanner Pro. Secure folders and protected PDFs.")
+    }
+}
 
 private struct OCRLanguageSelectionView: View {
     @Binding var selectedLanguageCodes: [String]
@@ -463,7 +489,7 @@ private struct AboutAppView: View {
             }
             .padding(20)
         }
-        .background(Color(.systemGroupedBackground))
+        .appGroupedScreenBackground()
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -609,7 +635,7 @@ private struct LegalDocumentView: View {
             }
             .padding(20)
         }
-        .background(Color(.systemGroupedBackground))
+        .appGroupedScreenBackground()
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -636,4 +662,5 @@ private extension View {
     NavigationStack {
         SettingsView()
     }
+    .environmentObject(ProStore(productIdentifier: nil, startLifecycle: false))
 }

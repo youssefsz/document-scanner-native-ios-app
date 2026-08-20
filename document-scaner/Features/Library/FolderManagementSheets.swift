@@ -11,6 +11,8 @@ struct NewFolderSheet: View {
     let onSave: @MainActor (String, FolderSecurity) async -> (success: Bool, error: String?)
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestProFeature) private var requestProFeature
+    @EnvironmentObject private var proStore: ProStore
     @FocusState private var isFocused: Bool
     @State private var name = ""
     @State private var isSecure = false
@@ -29,7 +31,18 @@ struct NewFolderSheet: View {
                 }
 
                 Section {
-                    Toggle(isOn: $isSecure) {
+                    Toggle(isOn: Binding(
+                        get: { isSecure },
+                        set: { newValue in
+                            if !newValue {
+                                isSecure = false
+                            } else if proStore.hasAccess(to: .secureFolder) {
+                                isSecure = true
+                            } else {
+                                requestProFeature(.secureFolder) { isSecure = true }
+                            }
+                        }
+                    )) {
                         Label("Secure Folder", systemImage: "lock.fill")
                     }
                     .disabled(isSaving)
@@ -76,6 +89,7 @@ struct NewFolderSheet: View {
             }
         }
         .interactiveDismissDisabled(isSaving)
+        .proPaywallHost()
         .task {
             isSecure = false
             isFocused = true
@@ -283,6 +297,8 @@ struct FolderPickerSheet: View {
     let onMove: (UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestProFeature) private var requestProFeature
+    @EnvironmentObject private var proStore: ProStore
     @State private var showsNewFolder = false
     @State private var pendingSecureDestination: DocumentFolder?
 
@@ -319,6 +335,7 @@ struct FolderPickerSheet: View {
             }
         }
         .interactiveDismissDisabled(isMoving)
+        .proPaywallHost()
         .confirmationDialog(
             "Move and Secure?",
             isPresented: Binding(
@@ -364,7 +381,13 @@ struct FolderPickerSheet: View {
     ) -> some View {
         Button {
             if isSecure, let id, let folder = folders.first(where: { $0.id == id }) {
-                pendingSecureDestination = folder
+                if proStore.hasAccess(to: .secureFolder) {
+                    pendingSecureDestination = folder
+                } else {
+                    requestProFeature(.secureFolder) {
+                        pendingSecureDestination = folder
+                    }
+                }
             } else {
                 onMove(id)
             }

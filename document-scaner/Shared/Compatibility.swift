@@ -59,6 +59,11 @@ struct AppUnavailableStateView: View {
 }
 
 extension View {
+    func appGroupedScreenBackground() -> some View {
+        frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+    }
+
     @ViewBuilder
     func appProminentButtonStyle(color: Color = .accentColor) -> some View {
         if #available(iOS 26.0, *) {

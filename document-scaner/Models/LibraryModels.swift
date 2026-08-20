@@ -103,6 +103,7 @@ nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
     case migrationFailed(String)
     case storageFailed(String)
     case secureAccessRequired
+    case proAccessRequired
     case invalidSecurityState
 
     var errorDescription: String? {
@@ -125,6 +126,8 @@ nonisolated enum LibraryRepositoryError: LocalizedError, Equatable, Sendable {
             message
         case .secureAccessRequired:
             "Unlock the secure folder to continue."
+        case .proAccessRequired:
+            "DocScanner Pro is required to create protected content."
         case .invalidSecurityState:
             "The document security state is inconsistent."
         }

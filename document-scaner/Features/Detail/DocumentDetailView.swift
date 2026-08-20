@@ -26,6 +26,7 @@ struct DocumentDetailView: View {
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var library: DocumentLibrary
+    @EnvironmentObject private var proStore: ProStore
 
     @State private var currentPageID: Int?
     @State private var isDeleting = false
@@ -533,6 +534,10 @@ struct DocumentDetailView: View {
 
     private func prepareShare(using quality: DocumentExportQuality) {
         guard !isPreparingShare, let exportPasswords else { return }
+        guard !requiresExportPassword || proStore.hasAccess(to: .passwordProtectedPDF) else {
+            exportPreviewErrors[quality] = LibraryRepositoryError.proAccessRequired.localizedDescription
+            return
+        }
 
         isPreparingShare = true
         pendingShareQuality = quality
@@ -543,6 +548,7 @@ struct DocumentDetailView: View {
             passwords: exportPasswords,
             sourceProtection: documentToExport.protection
         )
+        let proAccessGranted = proStore.hasAccess(to: .passwordProtectedPDF)
 
         Task {
             do {
@@ -560,7 +566,8 @@ struct DocumentDetailView: View {
                 let preparedExport = try await Self.exportService.prepareExport(
                     for: documentToExport,
                     configuration: configuration,
-                    authorizedSourceData: authorizedSourceData
+                    authorizedSourceData: authorizedSourceData,
+                    proAccessGranted: proAccessGranted
                 )
                 await MainActor.run {
                     guard pendingShareQuality == quality else { return }

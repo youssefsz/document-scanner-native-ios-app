@@ -1,0 +1,29 @@
+{
+  "identifier" : "24796B3A-5967-45BF-B86B-F76DF64D29AF",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "14.99",
+      "familyShareable" : false,
+      "internalID" : "CD134BF3-25B9-4588-A3DA-53C6092A02AB",
+      "localizations" : [
+        {
+          "description" : "Secure folders and protected PDF sharing.",
+          "displayName" : "DocScanner Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "tn.documentscaner.app.pro.lifetime",
+      "referenceName" : "DocScanner Pro Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [],
+  "version" : { "major" : 3, "minor" : 0 }
+}

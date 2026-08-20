@@ -12,6 +12,7 @@ struct LibraryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.requestProFeature) private var requestProFeature
 
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @AppStorage(AppPreferenceKey.hasCreatedFirstDocument) private var hasCreatedFirstDocument = false
@@ -58,7 +59,7 @@ struct LibraryView: View {
                 .onPreferenceChange(LibraryScrollOffsetPreferenceKey.self) { offset in
                     isContentScrolled = offset < -1
                 }
-                .background(Color(.systemGroupedBackground))
+                .appGroupedScreenBackground()
                 .navigationTitle(library.selectedSection.rawValue)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -130,6 +131,7 @@ struct LibraryView: View {
         .animation(searchResultsAnimation, value: library.folders.map(\.id))
         .animation(searchResultsAnimation, value: library.isDocumentSearchPending)
         .animation(searchResultsAnimation, value: library.isFolderSearchPending)
+        .proPaywallHost()
         .task {
             library.updateSortOrder(rawValue: documentSortOrder)
             await library.loadIfNeeded()
@@ -420,11 +422,18 @@ struct LibraryView: View {
                             Label("Rename", systemImage: "pencil")
                         }
                         Button {
-                            folderSecurityChange = FolderSecurityChangeRequest(
+                            let request = FolderSecurityChangeRequest(
                                 folder: summary.folder,
                                 documentCount: summary.documentCount,
                                 target: summary.folder.isSecure ? .standard : .secure
                             )
+                            if summary.folder.isSecure {
+                                folderSecurityChange = request
+                            } else {
+                                requestProFeature(.secureFolder) {
+                                    folderSecurityChange = request
+                                }
+                            }
                         } label: {
                             Label(
                                 summary.folder.isSecure ? "Remove Security" : "Make Secure",
@@ -901,4 +910,5 @@ struct LibraryView: View {
 #Preview {
     LibraryView()
         .environmentObject(DocumentLibrary.preview)
+        .environmentObject(ProStore(productIdentifier: nil, startLifecycle: false))
 }

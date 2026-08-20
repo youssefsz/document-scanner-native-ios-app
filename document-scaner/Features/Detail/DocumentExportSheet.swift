@@ -52,13 +52,14 @@ struct DocumentExportSheet: View {
                 }
 
                 Section {
-                    Toggle("Require Password", isOn: $requiresPassword)
-                        .disabled(isPreparingShare)
-                        .onChange(of: requiresPassword) { _ in
+                    ProPasswordToggle(
+                        isOn: $requiresPassword,
+                        isDisabled: isPreparingShare,
+                        onChange: {
                             passwordFeedback = nil
                             isPasswordRevealed = false
-                            UISelectionFeedbackGenerator().selectionChanged()
                         }
+                    )
 
                     if requiresPassword, let passwords {
                         passwordRow(passwords)
@@ -107,6 +108,7 @@ struct DocumentExportSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .proPaywallHost()
         .task {
             onSelectionChange(selectedQuality)
         }
@@ -220,6 +222,42 @@ struct DocumentExportSheet: View {
                 passwordFeedback = nil
             }
         }
+    }
+}
+
+private struct ProPasswordToggle: View {
+    @Binding var isOn: Bool
+    let isDisabled: Bool
+    let onChange: () -> Void
+
+    @Environment(\.requestProFeature) private var requestProFeature
+    @EnvironmentObject private var proStore: ProStore
+
+    var body: some View {
+        Toggle("Require Password", isOn: Binding(
+            get: { isOn },
+            set: { newValue in
+                if !newValue {
+                    isOn = false
+                    changed()
+                } else if proStore.hasAccess(to: .passwordProtectedPDF) {
+                    isOn = true
+                    changed()
+                } else {
+                    isOn = false
+                    requestProFeature(.passwordProtectedPDF) {
+                        isOn = true
+                        changed()
+                    }
+                }
+            }
+        ))
+        .disabled(isDisabled)
+    }
+
+    private func changed() {
+        onChange()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 }
 

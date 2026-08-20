@@ -83,8 +83,7 @@ struct SecureFolderGate: View {
             }
         }
         .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .appGroupedScreenBackground()
         .navigationTitle(folder.name)
         .navigationBarTitleDisplayMode(.inline)
         .animation(.easeInOut(duration: 0.2), value: isAuthenticating)
@@ -142,6 +141,7 @@ private struct SecureFolderDetailView: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.requestProFeature) private var requestProFeature
     @EnvironmentObject private var library: DocumentLibrary
     @State private var documents: [ScannedDocument] = []
     @State private var query = ""
@@ -200,7 +200,7 @@ private struct SecureFolderDetailView: View {
                 .transition(contentTransition)
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .appGroupedScreenBackground()
         .animation(contentAnimation, value: isLoading)
         .animation(contentAnimation, value: errorMessage)
         .animation(contentAnimation, value: documents.map(\.id))
@@ -225,10 +225,10 @@ private struct SecureFolderDetailView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button("Scan into Folder", systemImage: "document.viewfinder") {
-                            openScanner()
+                            requestProFeature(.secureFolder) { openScanner() }
                         }
                         Button("Add Existing Documents", systemImage: "doc.badge.plus") {
-                            showsAddDocuments = true
+                            requestProFeature(.secureFolder) { showsAddDocuments = true }
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -328,6 +328,7 @@ private struct SecureFolderDetailView: View {
             Text("This removes the encrypted PDFs, previews, and titles from this device.")
         }
         .onDisappear { query = "" }
+        .proPaywallHost()
     }
 
     private var filteredDocuments: [ScannedDocument] {

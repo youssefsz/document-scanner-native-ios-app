@@ -1,0 +1,3 @@
+PRO_PRODUCT_ID = tn.documentscaner.app.pro.lifetime
+
+#include? "LocalOverrides.xcconfig"

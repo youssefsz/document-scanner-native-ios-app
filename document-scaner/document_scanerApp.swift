@@ -10,14 +10,23 @@ import UIKit
 
 @main
 struct document_scanerApp: App {
-    @StateObject private var library = DocumentLibrary()
+    @StateObject private var proStore: ProStore
+    @StateObject private var library: DocumentLibrary
     @AppStorage(AppPreferenceKey.useDarkMode) private var useDarkMode = false
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        let proStore = ProStore()
+        _proStore = StateObject(wrappedValue: proStore)
+        _library = StateObject(wrappedValue: DocumentLibrary(proAccess: proStore))
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(library)
+                .environmentObject(proStore)
+                .proPaywallHost()
                 .preferredColorScheme(useDarkMode ? .dark : .light)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     Task {

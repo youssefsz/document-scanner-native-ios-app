@@ -27,6 +27,7 @@ final class DocumentLibrary: ObservableObject {
     private let vaultKeyStore: VaultKeyStore
     private let secureSessions: SecureFolderSessionController
     private let contentProvider: any DocumentContentProviding
+    private let proAccess: any ProAccessProviding
     private let vaultCrypto = VaultCryptoService()
     private var hasLoaded = false
     private var sortOrder: LibrarySortOrder = .newestFirst
@@ -50,7 +51,8 @@ final class DocumentLibrary: ObservableObject {
         securityCoordinator: DocumentSecurityCoordinator? = nil,
         vaultKeyStore: VaultKeyStore = VaultKeyStore(),
         secureSessions: SecureFolderSessionController? = nil,
-        contentProvider: any DocumentContentProviding = DocumentContentProvider()
+        contentProvider: any DocumentContentProviding = DocumentContentProvider(),
+        proAccess: (any ProAccessProviding)? = nil
     ) {
         let resolvedRepository = repository ?? CoreDataLibraryRepository()
         self.repository = resolvedRepository
@@ -58,6 +60,7 @@ final class DocumentLibrary: ObservableObject {
         self.vaultKeyStore = vaultKeyStore
         self.secureSessions = secureSessions ?? SecureFolderSessionController()
         self.contentProvider = contentProvider
+        self.proAccess = proAccess ?? FreeProAccessProvider()
         if let securityCoordinator {
             self.securityCoordinator = securityCoordinator
         } else if let securityRepository = resolvedRepository as? any DocumentSecurityRepository {
@@ -141,6 +144,11 @@ final class DocumentLibrary: ObservableObject {
         guard mutationsEnabled,
               !activeOperations.contains(.savingScan),
               folderID.map({ securityConversionTasks[$0] == nil }) ?? true else { return }
+        if let folderID,
+           allFolders.first(where: { $0.id == folderID })?.folder.isSecure == true,
+           !requirePro(.secureFolder) {
+            return
+        }
         activeOperations.insert(.savingScan)
         defer { activeOperations.remove(.savingScan) }
 
@@ -226,6 +234,7 @@ final class DocumentLibrary: ObservableObject {
             activeError = LibraryError(message: LibraryRepositoryError.missingFolder.localizedDescription)
             return false
         }
+        if destination?.isSecure == true, !requirePro(.secureFolder) { return false }
         do {
             try await securityCoordinator.moveSecureDocuments(
                 ids: ids,
@@ -247,7 +256,7 @@ final class DocumentLibrary: ObservableObject {
         destination: DocumentFolder,
         access: VaultAccess
     ) async -> Bool {
-        guard let securityCoordinator else { return false }
+        guard requirePro(.secureFolder), let securityCoordinator else { return false }
         let documents = allDocuments.filter { ids.contains($0.id) }
         guard documents.count == ids.count else { return false }
         do {
@@ -271,7 +280,7 @@ final class DocumentLibrary: ObservableObject {
         destination: DocumentFolder,
         access: VaultAccess
     ) async -> Bool {
-        guard let securityCoordinator else { return false }
+        guard requirePro(.secureFolder), let securityCoordinator else { return false }
         do {
             let prepared = try await store.prepareSecureScan(
                 pages: pages,
@@ -300,6 +309,7 @@ final class DocumentLibrary: ObservableObject {
 
     func createFolder(name: String, security: FolderSecurity = .standard) async -> Bool {
         guard mutationsEnabled, !activeOperations.contains(.creatingFolder) else { return false }
+        guard security != .secure || requirePro(.secureFolder) else { return false }
         let submittedName = LibraryTextNormalizer.ownedCopy(name)
         activeOperations.insert(.creatingFolder)
         defer { activeOperations.remove(.creatingFolder) }
@@ -370,6 +380,7 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func changeFolderSecurity(_ folder: DocumentFolder, to target: FolderSecurity) async -> Bool {
+        guard target != .secure || requirePro(.secureFolder) else { return false }
         guard let securityCoordinator,
               !securityConversionTasks.keys.contains(folder.id) else { return false }
         do {
@@ -480,6 +491,7 @@ final class DocumentLibrary: ObservableObject {
             if let folderID,
                let destination = allFolders.first(where: { $0.id == folderID })?.folder,
                destination.isSecure {
+                guard requirePro(.secureFolder) else { return false }
                 guard let securityCoordinator else { throw LibraryRepositoryError.invalidSecurityState }
                 let documents = allDocuments.filter { ids.contains($0.id) }
                 guard documents.count == ids.count else { throw LibraryRepositoryError.missingDocument }
@@ -583,6 +595,14 @@ final class DocumentLibrary: ObservableObject {
         return message
     }
 
+    private func requirePro(_ feature: ProFeature) -> Bool {
+        guard proAccess.hasAccess(to: feature) else {
+            activeError = LibraryError(message: LibraryRepositoryError.proAccessRequired.localizedDescription)
+            return false
+        }
+        return true
+    }
+
     private func refreshAll() async throws {
         documentSearchTask?.cancel()
         folderSearchTask?.cancel()
@@ -653,6 +673,12 @@ final class DocumentLibrary: ObservableObject {
         library.mutationsEnabled = true
         return library
     }()
+}
+
+@MainActor
+final class FreeProAccessProvider: ProAccessProviding {
+    var hasProAccess: Bool { false }
+    func hasAccess(to feature: ProFeature) -> Bool { false }
 }
 
 struct LibraryError: Identifiable, Equatable {
