@@ -93,20 +93,35 @@ final class ProStore: ObservableObject, ProAccessProviding {
             if !hasProAccess { entitlementState = .notEntitled }
             return hasProAccess
         }
-        var foundVerifiedEntitlement = false
-        for await transaction in client.currentEntitlements() {
-            guard transaction.productIdentifier == productIdentifier else { continue }
-            if transaction.isVerified, transaction.revocationDate == nil {
-                foundVerifiedEntitlement = true
-                await process(transaction, source: .background)
-            } else if transaction.isVerified, transaction.revocationDate != nil {
-                await process(transaction, source: .background)
+
+        let transactions = await client.currentEntitlements()
+        let matchingTransactions = transactions.filter {
+            $0.productIdentifier == productIdentifier
+        }
+
+        if let activeTransaction = matchingTransactions.first(where: {
+            $0.isVerified && $0.revocationDate == nil
+        }) {
+            await process(activeTransaction, source: .background)
+            return hasProAccess
+        }
+
+        if let revokedTransaction = matchingTransactions.first(where: {
+            $0.isVerified && $0.revocationDate != nil
+        }) {
+            await process(revokedTransaction, source: .background)
+            return hasProAccess
+        }
+
+        if matchingTransactions.contains(where: { !$0.isVerified }) {
+            if entitlementState == .unknown {
+                entitlementState = .notEntitled
             }
+            return hasProAccess
         }
-        if !foundVerifiedEntitlement, entitlementState == .unknown {
-            entitlementState = .notEntitled
-        }
-        return hasProAccess
+
+        clearCachedEntitlement()
+        return false
     }
 
     func purchase() async -> ProPurchaseOutcome {
@@ -206,13 +221,7 @@ final class ProStore: ObservableObject, ProAccessProviding {
               transaction.isVerified else { return }
 
         if transaction.revocationDate != nil {
-            do {
-                try cache.clear()
-            } catch {
-                fail(.storeKitFailure)
-                return
-            }
-            entitlementState = .notEntitled
+            clearCachedEntitlement()
             isAwaitingPaywallTransaction = false
             await transaction.finish()
             return
@@ -245,6 +254,15 @@ final class ProStore: ObservableObject, ProAccessProviding {
     private func fail(_ error: ProStoreError) {
         self.error = error
         operation = .failed
+    }
+
+    private func clearCachedEntitlement() {
+        entitlementState = .notEntitled
+        do {
+            try cache.clear()
+        } catch {
+            fail(.storeKitFailure)
+        }
     }
 }
 

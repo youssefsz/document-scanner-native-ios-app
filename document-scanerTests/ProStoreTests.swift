@@ -52,16 +52,27 @@ final class ProStoreTests: XCTestCase {
         XCTAssertEqual(store.entitlementState, .notEntitled)
     }
 
-    func testEmptyAndUnverifiedRefreshPreserveCachedPurchase() async {
+    func testCompletedEmptyRefreshClearsCachedPurchase() async {
         let cache = FakeEntitlementCache(record: record())
         let client = FakeStoreKitClient()
         let store = makeStore(client: client, cache: cache)
 
-        let emptyRefresh = await store.refreshEntitlement()
-        XCTAssertTrue(emptyRefresh)
+        let refreshed = await store.refreshEntitlement()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertNil(cache.record)
+        XCTAssertEqual(store.entitlementState, .notEntitled)
+    }
+
+    func testUnverifiedMatchingRefreshPreservesCachedPurchase() async {
+        let cache = FakeEntitlementCache(record: record())
+        let client = FakeStoreKitClient()
         client.current = [transaction(isVerified: false)]
-        let unverifiedRefresh = await store.refreshEntitlement()
-        XCTAssertTrue(unverifiedRefresh)
+        let store = makeStore(client: client, cache: cache)
+
+        let refreshed = await store.refreshEntitlement()
+
+        XCTAssertTrue(refreshed)
         XCTAssertNotNil(cache.record)
         XCTAssertEqual(store.entitlementState, .entitledCached)
     }
@@ -83,6 +94,32 @@ final class ProStoreTests: XCTestCase {
         let refreshed = await store.refreshEntitlement()
         XCTAssertFalse(refreshed)
         XCTAssertNil(cache.record)
+    }
+
+    func testCompletedSnapshotForAnotherProductClearsCachedPurchase() async {
+        let cache = FakeEntitlementCache(record: record())
+        let client = FakeStoreKitClient()
+        client.current = [transaction(productIdentifier: "other.product")]
+        let store = makeStore(client: client, cache: cache)
+
+        let refreshed = await store.refreshEntitlement()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertNil(cache.record)
+        XCTAssertEqual(store.entitlementState, .notEntitled)
+    }
+
+    func testCacheClearFailureStillRemovesSessionAccess() async {
+        let cache = FakeEntitlementCache(record: record(), clearError: TestError.expected)
+        let store = makeStore(cache: cache)
+
+        let refreshed = await store.refreshEntitlement()
+
+        XCTAssertFalse(refreshed)
+        XCTAssertFalse(store.hasProAccess)
+        XCTAssertEqual(store.entitlementState, .notEntitled)
+        XCTAssertEqual(store.error, .storeKitFailure)
+        XCTAssertEqual(store.operation, .failed)
     }
 
     func testPurchaseCancellationReturnsToIdleWithoutError() async {
@@ -314,8 +351,8 @@ private final class FakeStoreKitClient: StoreKitClient, @unchecked Sendable {
         return purchaseResult
     }
 
-    func currentEntitlements() -> AsyncStream<StoreTransaction> {
-        stream(current)
+    func currentEntitlements() async -> [StoreTransaction] {
+        current
     }
 
     func unfinishedTransactions() -> AsyncStream<StoreTransaction> {
@@ -349,10 +386,16 @@ private final class FakeStoreKitClient: StoreKitClient, @unchecked Sendable {
 private final class FakeEntitlementCache: ProEntitlementCaching, @unchecked Sendable {
     var record: ProEntitlementRecord?
     private let log: ThreadSafeEventLog?
+    private let clearError: Error?
 
-    init(record: ProEntitlementRecord? = nil, log: ThreadSafeEventLog? = nil) {
+    init(
+        record: ProEntitlementRecord? = nil,
+        log: ThreadSafeEventLog? = nil,
+        clearError: Error? = nil
+    ) {
         self.record = record
         self.log = log
+        self.clearError = clearError
     }
 
     func read() throws -> ProEntitlementRecord? { record }
@@ -363,6 +406,7 @@ private final class FakeEntitlementCache: ProEntitlementCaching, @unchecked Send
     }
 
     func clear() throws {
+        if let clearError { throw clearError }
         record = nil
         log?.append("clear")
     }

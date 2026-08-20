@@ -36,8 +36,12 @@ actor StoreKit2Client: StoreKitClient {
         }
     }
 
-    nonisolated func currentEntitlements() -> AsyncStream<StoreTransaction> {
-        Self.stream(from: Transaction.currentEntitlements)
+    func currentEntitlements() async -> [StoreTransaction] {
+        var transactions: [StoreTransaction] = []
+        for await result in Transaction.currentEntitlements {
+            transactions.append(Self.wrap(result))
+        }
+        return transactions
     }
 
     nonisolated func unfinishedTransactions() -> AsyncStream<StoreTransaction> {
@@ -62,7 +66,7 @@ actor StoreKit2Client: StoreKitClient {
                         continuation.yield(wrap(result))
                     }
                 } catch {
-                    // A later refresh or a new listener can recover. Never revoke cached access here.
+                    // A later snapshot or listener can recover from a failed background stream.
                 }
                 continuation.finish()
             }
@@ -90,4 +94,3 @@ actor StoreKit2Client: StoreKitClient {
         )
     }
 }
-

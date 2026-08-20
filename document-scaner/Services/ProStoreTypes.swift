@@ -116,7 +116,7 @@ protocol StoreKitClient: Sendable {
     var canMakePayments: Bool { get }
     func loadProduct(identifier: String) async throws -> StoreProduct?
     func purchase(product: StoreProduct) async throws -> StorePurchaseResult
-    func currentEntitlements() -> AsyncStream<StoreTransaction>
+    func currentEntitlements() async -> [StoreTransaction]
     func unfinishedTransactions() -> AsyncStream<StoreTransaction>
     func transactionUpdates() -> AsyncStream<StoreTransaction>
     func sync() async throws
