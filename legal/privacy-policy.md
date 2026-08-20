@@ -1,41 +1,77 @@
 # Privacy Policy
 
-Effective date: August 19, 2026
+Effective date: August 20, 2026
 
-This Privacy Policy explains what information DocScaner handles, how that information is used, and the choices you have.
+This Privacy Policy explains what information DocScanner: PDF Scan handles, how the app uses it, and the choices available to you. DocScanner is designed to process and store documents on your device.
 
 ## 1. Information the app handles
 
-DocScaner lets you scan paper documents, create PDF files, save document titles, generate preview images, protect folders, and create password-protected PDF copies. This information is stored locally on your device as part of the app's normal operation.
+DocScanner handles the pages you scan, PDF files, preview images, document and folder titles, creation dates, OCR text, and app settings. The app stores this information locally as part of its normal operation.
 
-If you contact support by email, you may also choose to send diagnostic details such as the app version, your iOS version, and any information you include in your message.
+If you use a secure folder, the app also handles encrypted copies of its folder name, documents, previews, and related metadata.
 
-## 2. How information is used
+If you contact support, you choose what to include in your message. A support email may include the app version, build number, iOS version, device and hardware model, preferred language, and any text or attachments you add.
 
-The app uses the camera only when you choose to scan a document. Captured pages are used to create PDFs and preview images so you can view, organize, and share your files inside the app.
+## 2. How the app uses information
 
-Document titles and creation dates are used only to organize your library on-device.
+The app uses the camera only when you choose to scan a document. It turns captured pages into PDF files and preview images so you can view, organize, search, and share them.
 
-Optical character recognition, secure-folder encryption, and PDF export encryption are performed on-device. Secure folders use Face ID, Touch ID, or the device passcode through Apple's system authentication interface. The app does not receive or store biometric data.
+Optical character recognition runs on the device. It adds searchable text to supported PDF files and uses the language preferences you select in Settings.
 
-## 3. Storage and sharing
+Document titles, folder titles, dates, and settings organize your local library and apply your chosen preferences.
 
-Scanned documents, preview images, and related metadata are stored locally on your device in the app's application support directory.
+## 3. Local storage and secure folders
 
-The app does not require user accounts, does not include third-party advertising or analytics SDKs, and does not upload your documents to developer-controlled servers.
+Scanned documents, previews, OCR results, folders, and related metadata are stored in the app's local storage on your device. DocScanner does not require an account and does not upload your documents to servers controlled by the developer.
 
-Documents are shared only when you explicitly choose a destination using the iOS share sheet or when you include information in a support email that you send voluntarily.
+Secure folder names, PDFs, and preview images are encrypted on the device. The encryption key is stored in the iOS Keychain and protected by system authentication.
 
-If you explicitly copy a generated PDF password, the app places it on the device-only clipboard with a five-minute expiration. The app does not automatically copy or transmit that password.
+When you unlock or create a secure folder, iOS may authenticate you with Face ID, Touch ID, or the device passcode. DocScanner receives only the result of that authentication. It does not receive or store your face, fingerprint, or biometric template.
 
-## 4. Permissions
+DocScanner does not include third-party advertising or analytics SDKs. The developer does not sell or rent your document data or support information.
 
-The app requests camera access so it can scan documents. If camera access is denied, scanning will not be available until permission is granted in iOS Settings. On supported devices, it also requests Face ID access when you choose to create or unlock a secure folder; Touch ID and device-passcode fallback are managed by iOS.
+## 4. DocScanner Pro purchases
 
-## 5. Retention and deletion
+DocScanner Pro is offered as a one-time, non-consumable in-app purchase. Apple processes the purchase through StoreKit. The developer does not receive or store your payment-card details.
 
-Your documents remain on your device until you delete them or remove the app. When you delete a document inside the app, the associated PDF file and preview image are removed from local storage. Temporary shared copies are removed after the share flow completes or is cancelled. Removing the app also removes its encryption key, which can make secure documents unrecoverable without a backup.
+The app receives limited transaction information needed to display the product, verify or restore access, and respond to a revocation. This can include the product identifier, original transaction identifier, transaction status, and verification date. DocScanner stores a local entitlement record in the iOS Keychain.
 
-## 6. Contact
+Apple handles purchase information under the Apple Privacy Policy at https://www.apple.com/legal/privacy/.
 
-If you have questions about this Privacy Policy, contact Youssef Dhibi at dhibi.ywsf@gmail.com or visit https://dhibi.tn.
+## 5. Permissions
+
+DocScanner requests camera access so you can scan documents. If you deny camera access, scanning remains unavailable until you allow it in iOS Settings.
+
+On supported devices, DocScanner requests Face ID access when you choose to create or open a secure folder. iOS manages Face ID, Touch ID, and device-passcode authentication.
+
+## 6. Sharing, exports, and the clipboard
+
+DocScanner shares a document only after you choose a destination through the iOS share sheet. The destination you select handles the shared copy under its own privacy policy.
+
+If you create a password-protected PDF, the app encrypts a temporary export copy. It does not alter the saved source document.
+
+If you choose to copy a generated PDF password, DocScanner places it on the device-only clipboard with a five-minute expiration. The password may remain available to other apps on your device until it expires or you replace it.
+
+Information is sent to support only when you choose to send an email. Your email provider and the support mailbox process that message.
+
+## 7. Retention and deletion
+
+Your documents remain on your device until you delete them or remove the app. When you delete a document inside DocScanner, the app removes its PDF and preview from local storage. The app removes temporary export copies after the related sharing flow ends.
+
+Deleting the app or losing access to its encryption key can make secure documents unrecoverable. Save any copies you need before deleting the app or changing devices.
+
+You may ask for a support message to be deleted by contacting the address below. This does not affect records that Apple controls for App Store purchases.
+
+## 8. Your choices
+
+You can delete documents and folders in the app, change OCR preferences in Settings, disable camera or Face ID access in iOS Settings, and decide whether to share a document or contact support.
+
+Because DocScanner does not operate user accounts or a document server, the developer cannot view, retrieve, or remotely delete documents stored only on your device.
+
+## 9. Changes to this policy
+
+This policy may change when the app's features or legal requirements change. The effective date at the top of this page identifies the latest version.
+
+## 10. Contact
+
+For privacy questions or deletion requests, contact Youssef Dhibi at dhibi.ywsf@gmail.com. For product help, visit https://youssef.tn/DocScanner/support/.

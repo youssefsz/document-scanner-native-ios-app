@@ -10,8 +10,10 @@ enum AppMetadata {
     static let creatorName = "Youssef Dhibi"
     static let portfolioDisplayName = "dhibi.tn"
     static let portfolioURL = URL(string: "https://dhibi.tn")!
+    static let supportDisplayName = "youssef.tn/DocScanner/support"
+    static let supportURL = URL(string: "https://youssef.tn/DocScanner/support/")!
     static let supportEmail = "dhibi.ywsf@gmail.com"
-    static let legalEffectiveDate = "March 8, 2026"
+    static let legalEffectiveDate = "August 20, 2026"
     static let appStoreIDKey = "AppStoreID"
     static let standardEULAURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
