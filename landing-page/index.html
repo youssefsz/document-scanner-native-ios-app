@@ -35,15 +35,6 @@
                             gray: '#F5F5F7',
                             dark: '#1C1C1E',
                         }
-                    },
-                    animation: {
-                        'float': 'float 6s ease-in-out infinite',
-                    },
-                    keyframes: {
-                        float: {
-                            '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-10px)' },
-                        }
                     }
                 }
             }
@@ -70,55 +61,60 @@
 
         .iphone-frame {
             position: relative;
-            width: 280px;
-            height: 560px;
-            background: #1c1c1e;
-            border-radius: 40px;
-            box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.25),
-                0 30px 60px -30px rgba(0, 0, 0, 0.3),
-                inset 0 -2px 6px 0 rgba(255, 255, 255, 0.1);
-            border: 10px solid #333;
-            overflow: hidden;
+            width: min(78vw, 304px);
+            padding: 7px;
+            background: linear-gradient(145deg, #77777b 0%, #1b1b1d 18%, #050506 54%, #4a4a4e 100%);
+            border: 1px solid #8d8d91;
+            border-radius: 50px;
+            box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.28),
+                0 30px 60px -30px rgba(0, 0, 0, 0.35),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.24);
             z-index: 10;
             margin: 0 auto;
         }
 
         @media (min-width: 768px) {
             .iphone-frame {
-                width: 300px;
-                height: 600px;
-                border: 12px solid #333;
-                border-radius: 50px;
+                width: 316px;
+                padding: 8px;
+                border-radius: 54px;
             }
         }
 
-        .iphone-notch {
+        .iphone-frame::before,
+        .iphone-frame::after {
+            content: '';
             position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100px;
-            height: 24px;
-            background: #333;
-            border-bottom-left-radius: 14px;
-            border-bottom-right-radius: 14px;
-            z-index: 20;
+            left: -4px;
+            width: 3px;
+            background: linear-gradient(90deg, #1b1b1d, #77777b);
+            border-radius: 3px 0 0 3px;
         }
 
-        @media (min-width: 768px) {
-            .iphone-notch {
-                width: 120px;
-                height: 30px;
-                border-bottom-left-radius: 18px;
-                border-bottom-right-radius: 18px;
-            }
+        .iphone-frame::before {
+            top: 112px;
+            height: 62px;
+        }
+
+        .iphone-frame::after {
+            top: 188px;
+            height: 86px;
         }
 
         .screenshot-container {
             width: 100%;
-            height: 100%;
+            aspect-ratio: 1179 / 2556;
             position: relative;
             overflow: hidden;
+            background: #f2f2f7;
+            border-radius: 42px;
+            isolation: isolate;
+        }
+
+        @media (min-width: 768px) {
+            .screenshot-container {
+                border-radius: 45px;
+            }
         }
 
         .screenshot {
@@ -126,7 +122,72 @@
             height: 100%;
             object-fit: cover;
             position: absolute;
-            transition: opacity 0.5s ease-in-out;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .screenshot.is-active {
+            opacity: 1;
+        }
+
+        .dynamic-island {
+            position: absolute;
+            z-index: 30;
+            top: 11px;
+            left: 50%;
+            width: 88px;
+            height: 25px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: #020203;
+            box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08),
+                inset 0 1px 1px rgba(255, 255, 255, 0.04);
+            pointer-events: none;
+        }
+
+        .dynamic-island::after {
+            content: '';
+            position: absolute;
+            top: 7px;
+            right: 8px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 42% 42%, #18365d 0 16%, #07111f 33%, #010203 68%);
+        }
+
+        .carousel-dot {
+            display: grid;
+            width: 44px;
+            height: 44px;
+            place-items: center;
+            border-radius: 999px;
+        }
+
+        .carousel-dot::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #c7c7cc;
+            transition: width 0.25s ease, background-color 0.25s ease;
+        }
+
+        .carousel-dot[aria-current="true"]::before {
+            width: 22px;
+            background: #1d1d1f;
+        }
+
+        .carousel-dot:focus-visible {
+            outline: 2px solid #007aff;
+            outline-offset: 1px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .screenshot {
+                transition: none;
+            }
         }
 
         .btn-apple {
@@ -206,23 +267,40 @@
             </a>
         </div>
 
-        <!-- iPhone Frame -->
-        <div class="relative">
-            <div class="iphone-frame animate-float">
-                <div class="iphone-notch"></div>
+        <!-- Interactive iPhone preview -->
+        <figure class="relative" aria-label="DocScanner app preview">
+            <div class="iphone-frame">
                 <div class="screenshot-container" id="screenshot-slider">
-                    <img src="assets/screenshots/home.png" alt="App Home Screenshot" class="screenshot opacity-100"
-                        id="screen-1">
-                    <img src="assets/screenshots/settings.png" alt="App Settings Screenshot"
-                        class="screenshot opacity-0" id="screen-2">
+                    <img src="assets/screenshots/01-library-source.png" alt="DocScanner document library"
+                        class="screenshot is-active" data-screen="Library" fetchpriority="high">
+                    <img src="assets/screenshots/02-folders-source.png" alt="DocScanner folder organizer"
+                        class="screenshot" data-screen="Folders" loading="lazy" aria-hidden="true">
+                    <img src="assets/screenshots/03-document-viewer-source.png" alt="A scanned document open in DocScanner"
+                        class="screenshot" data-screen="Document viewer" loading="lazy" aria-hidden="true">
+                    <img src="assets/screenshots/04-pdf-quality-source.png" alt="PDF export quality options in DocScanner"
+                        class="screenshot" data-screen="PDF quality" loading="lazy" aria-hidden="true">
+                    <img src="assets/screenshots/05-settings-source.png" alt="DocScanner settings and text recognition options"
+                        class="screenshot" data-screen="Settings" loading="lazy" aria-hidden="true">
+                    <div class="dynamic-island" aria-hidden="true"></div>
                 </div>
+            </div>
+
+            <figcaption class="sr-only" id="screen-description" aria-live="polite">Library screen</figcaption>
+
+            <div class="mt-5 flex items-center justify-center" id="carousel-controls"
+                aria-label="Choose an app screen">
+                <button type="button" class="carousel-dot" aria-label="Show Library screen" aria-current="true"></button>
+                <button type="button" class="carousel-dot" aria-label="Show Folders screen" aria-current="false"></button>
+                <button type="button" class="carousel-dot" aria-label="Show Document viewer screen" aria-current="false"></button>
+                <button type="button" class="carousel-dot" aria-label="Show PDF quality screen" aria-current="false"></button>
+                <button type="button" class="carousel-dot" aria-label="Show Settings screen" aria-current="false"></button>
             </div>
 
             <!-- Decorative Elements -->
             <div class="absolute -top-10 -left-10 w-40 h-40 bg-blue-100/50 rounded-full blur-3xl -z-10 animate-pulse">
             </div>
             <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-gray-200/50 rounded-full blur-3xl -z-10"></div>
-        </div>
+        </figure>
 
 
         <footer class="mt-12 md:mt-16 pb-8 text-center">
@@ -252,20 +330,53 @@
 
 
     <script>
-        // Simple Screenshot Slider
-        const screens = [
-            document.getElementById('screen-1'),
-            document.getElementById('screen-2')
-        ];
+        const screens = Array.from(document.querySelectorAll('.screenshot'));
+        const controls = Array.from(document.querySelectorAll('.carousel-dot'));
+        const screenDescription = document.getElementById('screen-description');
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         let currentIdx = 0;
+        let rotationTimer;
 
-        function rotateScreens() {
-            screens[currentIdx].classList.replace('opacity-100', 'opacity-0');
-            currentIdx = (currentIdx + 1) % screens.length;
-            screens[currentIdx].classList.replace('opacity-0', 'opacity-100');
+        function showScreen(index) {
+            screens[currentIdx].classList.remove('is-active');
+            screens[currentIdx].setAttribute('aria-hidden', 'true');
+            controls[currentIdx].setAttribute('aria-current', 'false');
+
+            currentIdx = index;
+
+            screens[currentIdx].classList.add('is-active');
+            screens[currentIdx].removeAttribute('aria-hidden');
+            controls[currentIdx].setAttribute('aria-current', 'true');
+            screenDescription.textContent = `${screens[currentIdx].dataset.screen} screen`;
         }
 
-        setInterval(rotateScreens, 4000);
+        function rotateScreens() {
+            showScreen((currentIdx + 1) % screens.length);
+        }
+
+        function startRotation() {
+            if (!reduceMotion) {
+                window.clearInterval(rotationTimer);
+                rotationTimer = window.setInterval(rotateScreens, 4500);
+            }
+        }
+
+        controls.forEach((control, index) => {
+            control.addEventListener('click', () => {
+                showScreen(index);
+                startRotation();
+            });
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                window.clearInterval(rotationTimer);
+            } else {
+                startRotation();
+            }
+        });
+
+        startRotation();
 
     </script>
 </body>
