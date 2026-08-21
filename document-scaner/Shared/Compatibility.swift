@@ -75,6 +75,15 @@ extension View {
     }
 
     @ViewBuilder
+    func appSecondaryCircularButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glass)
+        } else {
+            buttonStyle(AppSecondaryCircularButtonStyle())
+        }
+    }
+
+    @ViewBuilder
     func appViewerControlButtonStyle(isDestructive: Bool = false) -> some View {
         if #available(iOS 26.0, *) {
             buttonStyle(.glass)
@@ -146,6 +155,24 @@ private struct AppProminentButtonStyle: ButtonStyle {
             .shadow(color: color.opacity(isEnabled ? 0.25 : 0.12), radius: 18, y: 10)
             .opacity(configuration.isPressed ? 0.94 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
+}
+
+private struct AppSecondaryCircularButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.primary.opacity(isEnabled ? 1 : 0.45))
+            .background(Circle().fill(.regularMaterial))
+            .overlay {
+                Circle()
+                    .strokeBorder(.white.opacity(isEnabled ? 0.2 : 0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(isEnabled ? 0.14 : 0.06), radius: 14, y: 8)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }

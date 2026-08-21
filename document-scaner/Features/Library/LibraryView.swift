@@ -18,6 +18,8 @@ struct LibraryView: View {
     @AppStorage(AppPreferenceKey.documentSortOrder) private var documentSortOrder = DocumentSortOrder.newestFirst.rawValue
     @AppStorage(AppPreferenceKey.hasCreatedFirstDocument) private var hasCreatedFirstDocument = false
     @State private var isScannerPresented = false
+    @State private var isPhotoImporterPresented = false
+    @State private var photoImportProgress: PhotoImportProgress?
     @State private var isSavingPendingScan = false
     @State private var isDeletingSelection = false
     @State private var isNamingPendingScan = false
@@ -109,7 +111,9 @@ struct LibraryView: View {
                     bottomAccessory
                 }
                 .overlay {
-                    if isDeletingSelection || isDeletingFolder {
+                    if let photoImportProgress {
+                        PhotoImportProgressOverlay(progress: photoImportProgress)
+                    } else if isDeletingSelection || isDeletingFolder {
                         deletionOverlay
                     }
                 }
@@ -152,6 +156,14 @@ struct LibraryView: View {
             }
             pruneSelection(using: Set(documents.map(\.id)))
         }
+        .documentPhotoImporter(
+            isPresented: $isPhotoImporterPresented,
+            progress: $photoImportProgress,
+            onComplete: preparePendingScan,
+            onError: { error in
+                library.activeError = LibraryError(message: error.localizedDescription)
+            }
+        )
         .sheet(isPresented: $isScannerPresented) {
             DocumentScannerSheet(
                 onComplete: { pages in
@@ -172,7 +184,7 @@ struct LibraryView: View {
         .sheet(isPresented: $isNamingPendingScan) {
             DocumentTitleEditorSheet(
                 title: "Name Document",
-                message: "Choose a title before saving this scan to your library.",
+                message: "Choose a title before saving this document to your library.",
                 saveButtonTitle: "Save Document",
                 cancelButtonTitle: "Discard",
                 isSaving: isSavingPendingScan,
@@ -599,6 +611,29 @@ struct LibraryView: View {
                 .padding(.vertical, 16)
         }
         .appProminentButtonStyle()
+        .disabled(photoImportProgress != nil || isSavingPendingScan)
+    }
+
+    private var floatingPhotoImportButton: some View {
+        Button {
+            isPhotoImporterPresented = true
+        } label: {
+            Image(systemName: "photo.on.rectangle")
+                .font(.system(size: 21, weight: .semibold))
+                .frame(width: 56, height: 56)
+                .contentShape(Circle())
+        }
+        .appSecondaryCircularButtonStyle()
+        .disabled(photoImportProgress != nil || isSavingPendingScan)
+        .accessibilityLabel("Import Photos")
+        .accessibilityHint("Select one or more photos to create a document")
+    }
+
+    private var floatingCreationAccessory: some View {
+        HStack(spacing: 12) {
+            floatingPhotoImportButton
+            floatingScanButton
+        }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
         .transition(bottomAccessoryTransition)
@@ -624,7 +659,7 @@ struct LibraryView: View {
                 .transition(bottomAccessoryTransition)
             } else {
                 SearchAwareScanAccessory {
-                    floatingScanButton
+                    floatingCreationAccessory
                 }
             }
         }
