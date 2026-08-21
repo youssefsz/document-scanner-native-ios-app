@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement that fits DocScanner's local-first model
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem first. Large features should be discussed before implementation.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and did not find the same request.
+          required: true
+        - label: This request preserves DocScanner's local-first privacy model, or I have explained why it cannot.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who has this problem, and what are they unable to do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the outcome. Interface or code details are optional.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds or smaller options when relevant.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups or examples made with synthetic data only.

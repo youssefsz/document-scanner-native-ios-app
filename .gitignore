@@ -3,3 +3,14 @@ Config/LocalOverrides.xcconfig
 *.p8
 .DS_Store
 **/.DS_Store
+
+# Xcode user and local build data
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+DerivedData/
+build/
+
+# Swift Package Manager local output
+.build/
+.swiftpm/

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/youssefsz/document-scanner-native-ios-app/security/policy
+    about: Report a suspected vulnerability privately by following the security policy.
+  - name: App support
+    url: https://youssef.tn/DocScanner/support/
+    about: Get help with the App Store build, purchases, or using DocScanner.
