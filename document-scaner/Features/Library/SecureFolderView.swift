@@ -157,6 +157,8 @@ private struct SecureFolderDetailView: View {
     @State private var isDeleting = false
     @State private var showsAddDocuments = false
     @State private var isScannerPresented = false
+    @State private var isPhotoImporterPresented = false
+    @State private var photoImportProgress: PhotoImportProgress?
     @State private var isNamingPendingScan = false
     @State private var isSavingPendingScan = false
     @State private var pendingScanPages: [UIImage] = []
@@ -228,6 +230,9 @@ private struct SecureFolderDetailView: View {
                         Button("Scan into Folder", systemImage: "document.viewfinder") {
                             requestProFeature(.secureFolder) { openScanner() }
                         }
+                        Button("Import Photos", systemImage: "photo.on.rectangle") {
+                            requestProFeature(.secureFolder) { isPhotoImporterPresented = true }
+                        }
                         Button("Add Existing Documents", systemImage: "doc.badge.plus") {
                             requestProFeature(.secureFolder) { showsAddDocuments = true }
                         }
@@ -251,6 +256,11 @@ private struct SecureFolderDetailView: View {
                 .padding(.bottom, 24)
             }
         }
+        .overlay {
+            if let photoImportProgress {
+                PhotoImportProgressOverlay(progress: photoImportProgress)
+            }
+        }
         .task(id: access.sessionID) { await loadDocuments() }
         .fullScreenCover(item: $selectedDocument, onDismiss: {
             isPresentingChildFlow = false
@@ -259,6 +269,14 @@ private struct SecureFolderDetailView: View {
             DocumentDetailView(document: document, secureAccess: access)
                 .environmentObject(library)
         }
+        .documentPhotoImporter(
+            isPresented: $isPhotoImporterPresented,
+            progress: $photoImportProgress,
+            onComplete: preparePendingScan,
+            onError: { error in
+                library.activeError = LibraryError(message: error.localizedDescription)
+            }
+        )
         .sheet(isPresented: $showsMove) {
             FolderPickerSheet(
                 folders: library.allFolders.map(\.folder),
@@ -286,12 +304,7 @@ private struct SecureFolderDetailView: View {
             DocumentScannerSheet(
                 onComplete: { pages in
                     isScannerPresented = false
-                    pendingScanPages = pages
-                    pendingScanTitle = DocumentTitleFormatter.default(for: .now)
-                    Task { @MainActor in
-                        await Task.yield()
-                        isNamingPendingScan = true
-                    }
+                    preparePendingScan(pages)
                 },
                 onCancel: { isScannerPresented = false },
                 onError: { error in
@@ -305,7 +318,7 @@ private struct SecureFolderDetailView: View {
         .sheet(isPresented: $isNamingPendingScan) {
             DocumentTitleEditorSheet(
                 title: "Name Document",
-                message: "Choose a title before saving this scan to \(folder.name).",
+                message: "Choose a title before saving this document to \(folder.name).",
                 saveButtonTitle: "Save to Secure Folder",
                 cancelButtonTitle: "Discard",
                 isSaving: isSavingPendingScan,
@@ -446,6 +459,20 @@ private struct SecureFolderDetailView: View {
             return
         }
         isScannerPresented = true
+    }
+
+    private func preparePendingScan(_ pages: [UIImage]) {
+        guard !pages.isEmpty else {
+            library.activeError = LibraryError(message: DocumentStoreError.emptyScan.localizedDescription)
+            return
+        }
+
+        pendingScanPages = pages
+        pendingScanTitle = DocumentTitleFormatter.default(for: .now)
+        Task { @MainActor in
+            await Task.yield()
+            isNamingPendingScan = true
+        }
     }
 
     private func saveSecureScan() {

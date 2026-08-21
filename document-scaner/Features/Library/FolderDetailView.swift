@@ -33,6 +33,8 @@ struct FolderDetailView: View {
     @State private var isDeletingDocuments = false
     @State private var showsAddDocuments = false
     @State private var isScannerPresented = false
+    @State private var isPhotoImporterPresented = false
+    @State private var photoImportProgress: PhotoImportProgress?
     @State private var isNamingPendingScan = false
     @State private var isSavingPendingScan = false
     @State private var pendingScanPages: [UIImage] = []
@@ -111,6 +113,9 @@ struct FolderDetailView: View {
                         Button("Scan into Folder", systemImage: "document.viewfinder") {
                             openScanner()
                         }
+                        Button("Import Photos", systemImage: "photo.on.rectangle") {
+                            isPhotoImporterPresented = true
+                        }
                         Button("Add Existing Documents", systemImage: "doc.badge.plus") {
                             showsAddDocuments = true
                         }
@@ -138,7 +143,9 @@ struct FolderDetailView: View {
             }
         }
         .overlay {
-            if isDeleting {
+            if let photoImportProgress {
+                PhotoImportProgressOverlay(progress: photoImportProgress)
+            } else if isDeleting {
                 ZStack {
                     Color.black.opacity(0.12).ignoresSafeArea()
                     ProgressView("Deleting folder…")
@@ -157,6 +164,14 @@ struct FolderDetailView: View {
         .fullScreenCover(item: $selectedDocument) { document in
             DocumentDetailView(document: document).environmentObject(library)
         }
+        .documentPhotoImporter(
+            isPresented: $isPhotoImporterPresented,
+            progress: $photoImportProgress,
+            onComplete: preparePendingScan,
+            onError: { error in
+                library.activeError = LibraryError(message: error.localizedDescription)
+            }
+        )
         .sheet(isPresented: $isScannerPresented) {
             DocumentScannerSheet(
                 onComplete: { pages in
@@ -177,7 +192,7 @@ struct FolderDetailView: View {
         .sheet(isPresented: $isNamingPendingScan) {
             DocumentTitleEditorSheet(
                 title: "Name Document",
-                message: "Choose a title before saving this scan to “\(displayName)”.",
+                message: "Choose a title before saving this document to “\(displayName)”.",
                 saveButtonTitle: "Save to Folder",
                 cancelButtonTitle: "Discard",
                 isSaving: isSavingPendingScan,
