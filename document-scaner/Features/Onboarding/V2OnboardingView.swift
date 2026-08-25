@@ -5,6 +5,7 @@ enum V2OnboardingStep: Int, CaseIterable {
     case welcome
     case comparison
     case folders
+    case photoImport
     case pro
 }
 
@@ -56,6 +57,8 @@ struct V2OnboardingView: View {
             ComparisonOnboardingPage(isCompact: isCompact)
         case .folders:
             FoldersOnboardingPage(isCompact: isCompact)
+        case .photoImport:
+            PhotoImportOnboardingPage(isCompact: isCompact)
         case .pro:
             ProOnboardingPage(isCompact: isCompact)
         }
@@ -236,9 +239,99 @@ private struct FoldersOnboardingPage: View {
     }
 }
 
+private struct PhotoImportOnboardingPage: View {
+    let isCompact: Bool
+
+    var body: some View {
+        VStack(spacing: isCompact ? 12 : 18) {
+            Spacer(minLength: 0)
+
+            OnboardingTitle(
+                title: "Import, find, and organize",
+                subtitle: "Bring in photos, search document titles, and keep everything organized in folders."
+            )
+
+            OnboardingScreenshot(
+                imageName: "OnboardingPhotoImport",
+                fallback: .photoImport
+            )
+            .aspectRatio(1000.0 / 481.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color(.separator).opacity(0.45), lineWidth: 0.5)
+            }
+            .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+                OnboardingFeatureSummary(
+                    imageName: "OnboardingPhotoImportIcon",
+                    title: "Import from Photos",
+                    description: "Turn one or more images into a searchable PDF."
+                )
+
+                Divider()
+                    .padding(.leading, 68)
+
+                OnboardingFeatureSummary(
+                    imageName: "OnboardingDocumentSearchIcon",
+                    title: "Find documents quickly",
+                    description: "Search your saved documents by title."
+                )
+
+                Divider()
+                    .padding(.leading, 68)
+
+                OnboardingFeatureSummary(
+                    imageName: "OnboardingFolderOrganizationIcon",
+                    title: "Keep everything organized",
+                    description: "Group related documents in folders."
+                )
+            }
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct OnboardingFeatureSummary: View {
+    let imageName: String
+    let title: String
+    let description: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(imageName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 enum OnboardingScreenshotFallback {
     case library
     case folders
+    case photoImport
 }
 
 struct OnboardingScreenshot: View {
@@ -258,6 +351,8 @@ struct OnboardingScreenshot: View {
                     OnboardingLibraryFallback()
                 case .folders:
                     OnboardingFoldersFallback()
+                case .photoImport:
+                    OnboardingPhotoImportFallback()
                 }
             }
         }
@@ -345,6 +440,36 @@ private struct OnboardingFoldersFallback: View {
             Spacer(minLength: 0)
         }
         .padding(16)
+        .background(Color(.systemGroupedBackground))
+        .accessibilityHidden(true)
+    }
+}
+
+private struct OnboardingPhotoImportFallback: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack(spacing: 12) {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.title2.weight(.semibold))
+                    .frame(width: 64, height: 64)
+                    .background(.regularMaterial, in: Circle())
+
+                Label("Scan Document", systemImage: "document.viewfinder")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                    .background(Color.accentColor, in: Capsule())
+            }
+
+            Label("Search document titles", systemImage: "magnifyingglass")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .frame(minHeight: 56)
+                .background(.regularMaterial, in: Capsule())
+        }
+        .padding(20)
         .background(Color(.systemGroupedBackground))
         .accessibilityHidden(true)
     }
