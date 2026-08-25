@@ -2,6 +2,14 @@ import XCTest
 @testable import DocScanner
 
 final class V2OnboardingPresentationTests: XCTestCase {
+    func testPhotoImportIntroductionAppearsBeforeFinalProStep() {
+        XCTAssertEqual(V2OnboardingStep.allCases.count, 5)
+        XCTAssertEqual(
+            V2OnboardingStep.photoImport.rawValue + 1,
+            V2OnboardingStep.pro.rawValue
+        )
+    }
+
     func testPresentsAfterSuccessfulLibraryLoadWhenIntroductionHasNotBeenSeen() {
         XCTAssertTrue(
             V2OnboardingPresentation.shouldPresent(
