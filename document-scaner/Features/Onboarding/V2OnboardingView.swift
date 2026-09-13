@@ -163,29 +163,175 @@ private struct WelcomeOnboardingPage: View {
     let isCompact: Bool
 
     var body: some View {
-        VStack(spacing: isCompact ? 18 : 24) {
+        VStack(spacing: isCompact ? 16 : 22) {
             Spacer()
 
-            Image("LaunchIcon")
+            Image("OnboardingWelcomeHero")
                 .resizable()
+                .interpolation(.high)
                 .scaledToFit()
-                .frame(width: isCompact ? 72 : 88, height: isCompact ? 72 : 88)
-                .clipShape(RoundedRectangle(cornerRadius: isCompact ? 17 : 21, style: .continuous))
+                .frame(maxWidth: isCompact ? 240 : 300)
                 .accessibilityHidden(true)
 
             VStack(spacing: 10) {
-                Text("Welcome to DocScanner V2")
-                    .font((isCompact ? Font.title : .largeTitle).weight(.bold))
-                    .multilineTextAlignment(.center)
+                WelcomeBrandTitle(isCompact: isCompact)
 
-                Text("Scan, organize, protect, and share your documents.")
-                    .font(isCompact ? .body : .title3)
+                Text("A redesigned experience for scanning, organizing, and finding your documents.")
+                    .font(isCompact ? .subheadline : .body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+                    .frame(maxWidth: 380)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
+    }
+}
+
+private struct WelcomeBrandTitle: View {
+    let isCompact: Bool
+
+    private var titleFont: Font {
+        (isCompact ? Font.title : .largeTitle).weight(.bold)
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("Meet ")
+                .foregroundStyle(.primary)
+
+            ShimmeringBrandText("DocScanner 2", font: titleFont)
+        }
+        .font(titleFont)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Meet DocScanner 2")
+    }
+}
+
+private struct ShimmeringBrandText: View {
+    let title: String
+    let font: Font
+
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
+    private let cycleDuration: TimeInterval = 2.4
+
+    init(_ title: String, font: Font) {
+        self.title = title
+        self.font = font
+    }
+
+    var body: some View {
+        if accessibilityReduceMotion {
+            gradientText(phase: 0.5)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let elapsed = context.date.timeIntervalSinceReferenceDate
+                let phase = elapsed.truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
+
+                gradientText(phase: 1 - phase)
+                    .overlay {
+                        OnboardingTitleSparkles(elapsed: elapsed)
+                    }
+            }
+        }
+    }
+
+    private var brandText: some View {
+        Text(title)
+            .font(font)
+    }
+
+    private func gradientText(phase: Double) -> some View {
+        brandText
+            .foregroundStyle(.clear)
+            .overlay {
+                GeometryReader { proxy in
+                    LinearGradient(
+                        stops: repeatingGradientStops,
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: proxy.size.width * 2)
+                    .offset(x: -proxy.size.width * CGFloat(phase))
+                }
+            }
+            .mask {
+                brandText
+                    .foregroundStyle(.white)
+            }
+            .clipped()
+    }
+
+    private var repeatingGradientStops: [Gradient.Stop] {
+        let firstPattern: [(color: Color, location: CGFloat)] = [
+            (Color(red: 0.00, green: 0.52, blue: 1.00), 0.00),
+            (Color(red: 0.00, green: 0.68, blue: 0.92), 0.16),
+            (Color(red: 0.38, green: 0.68, blue: 0.96), 0.20),
+            (Color(red: 0.16, green: 0.60, blue: 0.96), 0.24),
+            (Color(red: 0.15, green: 0.36, blue: 0.90), 0.38),
+            (Color(red: 0.00, green: 0.52, blue: 1.00), 0.50)
+        ]
+
+        let firstHalf = firstPattern.map { stop in
+            Gradient.Stop(color: stop.color, location: stop.location)
+        }
+        let secondHalf = firstPattern.dropFirst().map { stop in
+            Gradient.Stop(color: stop.color, location: stop.location + 0.5)
+        }
+
+        return firstHalf + secondHalf
+    }
+}
+
+private struct OnboardingTitleSparkles: View {
+    let elapsed: TimeInterval
+
+    var body: some View {
+        GeometryReader { proxy in
+            let textHeight = max(proxy.size.height, 1)
+
+            ZStack {
+                NativeTitleSparkle(elapsed: elapsed, advance: 0.20)
+                    .frame(width: textHeight * 0.24, height: textHeight * 0.24)
+                    .position(x: proxy.size.width * 0.10, y: textHeight * 0.02)
+
+                NativeTitleSparkle(elapsed: elapsed, advance: 1.35)
+                    .frame(width: textHeight * 0.16, height: textHeight * 0.16)
+                    .position(x: proxy.size.width, y: textHeight * 0.96)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct NativeTitleSparkle: View {
+    let elapsed: TimeInterval
+    let advance: TimeInterval
+
+    private let duration: TimeInterval = 2.8
+
+    var body: some View {
+        Image(systemName: "sparkle")
+            .resizable()
+            .scaledToFit()
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(Color(red: 0.18, green: 0.62, blue: 0.96))
+            .shadow(
+                color: Color(red: 0.00, green: 0.52, blue: 1.00).opacity(0.24),
+                radius: 2
+            )
+            .opacity(0.18 + (pulse * 0.50))
+            .scaleEffect(0.86 + (pulse * 0.14))
+    }
+
+    private var pulse: Double {
+        let phase = (elapsed + advance).truncatingRemainder(dividingBy: duration) / duration
+        return (sin((phase * 2 * .pi) - (.pi / 2)) + 1) / 2
     }
 }
 
