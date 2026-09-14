@@ -36,11 +36,11 @@ The app does not require an account, include third-party advertising or analytic
 ## Screenshots
 
 <p align="center">
-  <img src="marketing/App%20Store%20Screenshots/iPhone/Sources/01-library-source.png" width="18%" alt="DocScanner library">
-  <img src="marketing/App%20Store%20Screenshots/iPhone/Sources/02-folders-source.png" width="18%" alt="DocScanner folders">
-  <img src="marketing/App%20Store%20Screenshots/iPhone/Sources/03-document-viewer-source.png" width="18%" alt="DocScanner document viewer">
-  <img src="marketing/App%20Store%20Screenshots/iPhone/Sources/04-pdf-quality-source.png" width="18%" alt="DocScanner PDF export quality">
-  <img src="marketing/App%20Store%20Screenshots/iPhone/Sources/05-settings-source.png" width="18%" alt="DocScanner settings">
+  <img src="marketing/App%20Store%20Screenshots/iPhone/sources/01-library-source.png" width="18%" alt="DocScanner library">
+  <img src="marketing/App%20Store%20Screenshots/iPhone/sources/02-folders-source.png" width="18%" alt="DocScanner folders">
+  <img src="marketing/App%20Store%20Screenshots/iPhone/sources/03-document-viewer-source.png" width="18%" alt="DocScanner document viewer">
+  <img src="marketing/App%20Store%20Screenshots/iPhone/sources/04-pdf-quality-source.png" width="18%" alt="DocScanner PDF export quality">
+  <img src="marketing/App%20Store%20Screenshots/iPhone/sources/05-settings-source.png" width="18%" alt="DocScanner settings">
 </p>
 
 ## What is included
