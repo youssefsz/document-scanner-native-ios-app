@@ -10,7 +10,7 @@ Youssef Dhibi reserves all rights in:
 - App Store screenshots and marketing screenshots
 - Advertisements, campaign graphics, and other promotional artwork
 
-This includes the image assets in the app icon and launch icon asset catalogs, `landing-page/assets/logo`, `landing-page/assets/favicons`, `landing-page/assets/screenshots`, and the image artwork under `marketing`. Source code and documentation stored beside those images remain under the MIT License unless a file says otherwise.
+This includes the image assets in the app icon and launch icon asset catalogs, the artwork under `landing-page/src/assets` and `landing-page/public`, the preserved files under `legacy-landing-page/assets`, and the image artwork under `marketing`. Source code and documentation stored beside those images remain under the MIT License unless a file says otherwise.
 
 ## Allowed references
 
