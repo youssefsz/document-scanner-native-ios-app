@@ -9,12 +9,18 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var library: DocumentLibrary
+    @Environment(\.presentProPaywall) private var presentProPaywall
     @AppStorage(AppPreferenceKey.lastSeenMajorIntroduction) private var lastSeenMajorIntroduction = 0
     @State private var isOnboardingPresented = false
+    @State private var shouldPresentPaywallAfterOnboarding = false
+    @State private var hasRequestedLaunchPaywall = false
 
     var body: some View {
         LibraryView()
-            .fullScreenCover(isPresented: $isOnboardingPresented) {
+            .fullScreenCover(
+                isPresented: $isOnboardingPresented,
+                onDismiss: onboardingDidDismiss
+            ) {
                 V2OnboardingView(mode: .automatic) { completion in
                     finishOnboarding(completion)
                 }
@@ -29,10 +35,20 @@ struct ContentView: View {
     }
 
     private func updateOnboardingPresentation(for loadState: LibraryLoadState) {
-        isOnboardingPresented = V2OnboardingPresentation.shouldPresent(
+        let destination = AppLaunchPresentation.destination(
             lastSeenMajorIntroduction: lastSeenMajorIntroduction,
             loadState: loadState
         )
+
+        switch destination {
+        case .onboarding:
+            isOnboardingPresented = true
+        case .paywall:
+            isOnboardingPresented = false
+            requestLaunchPaywallOnce()
+        case .none:
+            isOnboardingPresented = false
+        }
     }
 
     private func finishOnboarding(_ completion: V2OnboardingCompletion) {
@@ -40,7 +56,41 @@ struct ContentView: View {
         case .completed, .skipped:
             lastSeenMajorIntroduction = V2OnboardingPresentation.majorVersion
         }
+        shouldPresentPaywallAfterOnboarding = true
         isOnboardingPresented = false
+    }
+
+    private func onboardingDidDismiss() {
+        guard shouldPresentPaywallAfterOnboarding else { return }
+        shouldPresentPaywallAfterOnboarding = false
+        requestLaunchPaywallOnce()
+    }
+
+    private func requestLaunchPaywallOnce() {
+        guard !hasRequestedLaunchPaywall else { return }
+        hasRequestedLaunchPaywall = true
+        presentProPaywall()
+    }
+}
+
+enum AppLaunchPresentation: Equatable {
+    case none
+    case onboarding
+    case paywall
+
+    nonisolated static func destination(
+        lastSeenMajorIntroduction: Int,
+        loadState: LibraryLoadState
+    ) -> AppLaunchPresentation {
+        switch loadState {
+        case .loaded, .empty:
+            V2OnboardingPresentation.shouldPresent(
+                lastSeenMajorIntroduction: lastSeenMajorIntroduction,
+                loadState: loadState
+            ) ? .onboarding : .paywall
+        case .initialLoading, .migrating, .migrationFailed, .failed:
+            .none
+        }
     }
 }
 
