@@ -1,0 +1,85 @@
+---
+import { Image } from "astro:assets"
+import appIcon from "@/assets/brand/app-icon.png"
+import documentViewerScreen from "@/assets/screens/document-viewer.png"
+import foldersScreen from "@/assets/screens/folders.png"
+import libraryScreen from "@/assets/screens/library.png"
+import pdfQualityScreen from "@/assets/screens/pdf-quality.png"
+import settingsScreen from "@/assets/screens/settings.png"
+import AppStoreBadge from "@/components/AppStoreBadge.astro"
+import PhoneFrame from "@/components/PhoneFrame.astro"
+import { siteConfig } from "../../site.config.mjs"
+---
+
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="hero__icon-stage">
+    <div class="hero__icon-wrap">
+      <Image
+        class="hero__icon"
+        src={appIcon}
+        alt={`${siteConfig.appName} app icon`}
+        width={1024}
+        height={1024}
+        format="webp"
+        loading="eager"
+        fetchpriority="high"
+      />
+    </div>
+    <p class="hero__app-name">{siteConfig.appName}</p>
+  </div>
+
+  <div class="hero__copy">
+    <h1 id="hero-title">
+      <span>{siteConfig.heroHeadline[0]}</span>
+      <span class="hero__title-accent">{siteConfig.heroHeadline[1]}</span>
+    </h1>
+    <p class="hero__lede">
+      Turn paper and photos into searchable PDFs. Organize, protect, and export
+      documents without an account or developer-operated cloud storage.
+    </p>
+    <AppStoreBadge />
+  </div>
+
+  <div class="hero-devices" aria-label="DocScanner app screens">
+    <div class="hero-device" data-fan-start="100">
+      <PhoneFrame
+        src={pdfQualityScreen}
+        alt="DocScanner PDF export quality options"
+        eager
+        sizes="18vw"
+      />
+    </div>
+    <div class="hero-device" data-fan-start="50">
+      <PhoneFrame
+        src={foldersScreen}
+        alt="Folders and a secure folder in DocScanner"
+        eager
+        sizes="22vw"
+      />
+    </div>
+    <div class="hero-device" data-fan-start="0">
+      <PhoneFrame
+        src={libraryScreen}
+        alt="DocScanner document library"
+        eager
+        sizes="26vw"
+      />
+    </div>
+    <div class="hero-device" data-fan-start="50">
+      <PhoneFrame
+        src={documentViewerScreen}
+        alt="A scanned document open in DocScanner"
+        eager
+        sizes="22vw"
+      />
+    </div>
+    <div class="hero-device" data-fan-start="100">
+      <PhoneFrame
+        src={settingsScreen}
+        alt="DocScanner settings and offline text recognition options"
+        eager
+        sizes="18vw"
+      />
+    </div>
+  </div>
+</section>

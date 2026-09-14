@@ -1,0 +1,97 @@
+---
+interface Item {
+  question: string
+  answer: string
+}
+
+interface Props {
+  items: Item[]
+  className?: string
+  openFirst?: boolean
+}
+
+const { items, className, openFirst = true } = Astro.props
+---
+
+<div class:list={["expandable-list", className]}>
+  {
+    items.map(({ question, answer }, index) => (
+      <details open={openFirst && index === 0}>
+        <summary>
+          <span>{question}</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M5 12h14M12 5v14" />
+          </svg>
+        </summary>
+        <p>{answer}</p>
+      </details>
+    ))
+  }
+</div>
+
+<script>
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
+
+  document
+    .querySelectorAll<HTMLDetailsElement>(".expandable-list details")
+    .forEach((details) => {
+      const summary = details.querySelector("summary")
+      if (!summary || details.dataset.expandableReady === "true") return
+
+      details.dataset.expandableReady = "true"
+      let targetOpen = details.open
+      let activeAnimation: Animation | undefined
+
+      const finish = (open: boolean) => {
+        details.open = open
+        details.classList.remove("is-collapsing")
+        details.style.removeProperty("height")
+        details.style.removeProperty("overflow")
+        activeAnimation = undefined
+      }
+
+      summary.addEventListener("click", (event) => {
+        if (reducedMotion.matches) {
+          activeAnimation?.cancel()
+          finish(details.open)
+          window.setTimeout(() => {
+            targetOpen = details.open
+          })
+          return
+        }
+
+        event.preventDefault()
+        targetOpen = !targetOpen
+
+        const startHeight = details.getBoundingClientRect().height
+        activeAnimation?.cancel()
+        details.style.height = `${startHeight}px`
+        details.style.overflow = "clip"
+        details.classList.toggle("is-collapsing", !targetOpen)
+
+        if (targetOpen) details.open = true
+
+        const borderHeight = details.offsetHeight - details.clientHeight
+        const endHeight = targetOpen
+          ? details.scrollHeight + borderHeight
+          : summary.offsetHeight + borderHeight
+        const nextOpen = targetOpen
+        const animation = details.animate(
+          { height: [`${startHeight}px`, `${endHeight}px`] },
+          { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+        )
+
+        activeAnimation = animation
+        animation.onfinish = () => {
+          if (activeAnimation === animation) finish(nextOpen)
+        }
+      })
+
+      reducedMotion.addEventListener("change", (event) => {
+        if (event.matches && activeAnimation) {
+          activeAnimation.cancel()
+          finish(targetOpen)
+        }
+      })
+    })
+</script>

@@ -1,0 +1,65 @@
+---
+import foldersScreen from "@/assets/screens/folders.png"
+import libraryScreen from "@/assets/screens/library.png"
+import pdfQualityScreen from "@/assets/screens/pdf-quality.png"
+import PhoneFrame from "@/components/PhoneFrame.astro"
+import SectionTitle from "@/components/SectionTitle.astro"
+---
+
+<section class="experience" id="experience" aria-labelledby="experience-title">
+  <div class="shell">
+    <SectionTitle
+      id="experience-title"
+      eyebrow="Experience"
+      title="From paper to protected PDF."
+      description="Capture pages, keep the library organized, and choose exactly how each document leaves your device."
+    />
+
+    <div class="experience__phones">
+      <article class="experience-phone">
+        <PhoneFrame
+          src={libraryScreen}
+          alt="Document library with scanned pages and search"
+          sizes="(max-width: 640px) 68vw, 290px"
+        />
+        <div class="experience-phone__copy">
+          <h3>Scan paper or import photos</h3>
+          <p>
+            Capture one or more pages, or select up to 20 photos. DocScanner
+            creates a PDF and can add searchable text with offline OCR.
+          </p>
+        </div>
+      </article>
+
+      <article class="experience-phone">
+        <PhoneFrame
+          src={foldersScreen}
+          alt="Document folders including an encrypted secure folder"
+          sizes="(max-width: 640px) 68vw, 290px"
+        />
+        <div class="experience-phone__copy">
+          <h3>Organize and protect files</h3>
+          <p>
+            Group documents in folders and search by title. Pro secure folders
+            encrypt names, PDFs, and previews on your device.
+          </p>
+        </div>
+      </article>
+
+      <article class="experience-phone">
+        <PhoneFrame
+          src={pdfQualityScreen}
+          alt="PDF sharing sheet with export quality choices"
+          sizes="(max-width: 640px) 68vw, 290px"
+        />
+        <div class="experience-phone__copy">
+          <h3>Export the copy you need</h3>
+          <p>
+            Choose a PDF quality preset before sharing. With Pro, add a password
+            to the exported copy without changing the saved original.
+          </p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>

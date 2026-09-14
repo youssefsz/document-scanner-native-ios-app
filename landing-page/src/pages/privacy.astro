@@ -1,0 +1,20 @@
+---
+import { Content as PrivacyPolicy } from "@/content/privacy-policy.md"
+import LegalPageShell from "@/components/LegalPageShell.astro"
+import Layout from "@/layouts/main.astro"
+---
+
+<Layout
+  title="Privacy Policy | DocScanner: PDF Scan"
+  description="Privacy Policy for DocScanner: PDF Scan, including on-device scanning, OCR, secure folders, PDF exports, support, and in-app purchases."
+>
+  <LegalPageShell
+    eyebrow="Privacy"
+    title="Privacy Policy"
+    description="Effective date: August 20, 2026"
+  >
+    <article class="legal-document legal-document--markdown">
+      <PrivacyPolicy />
+    </article>
+  </LegalPageShell>
+</Layout>

@@ -1,0 +1,28 @@
+---
+import BrandLockup from "@/components/BrandLockup.astro"
+import { MobileDownloadDrawer } from "@/components/MobileDownloadDrawer"
+import { sitePath } from "@/lib/site-path"
+import { siteConfig } from "../../site.config.mjs"
+---
+
+<header class="site-header" data-site-header>
+  <div class="site-header__inner">
+    <a class="site-header__brand" href="#top" aria-label="DocScanner home">
+      <BrandLockup compact />
+    </a>
+
+    <a
+      class="header-cta"
+      href={siteConfig.appStoreUrl}
+      target="_blank"
+      rel="noopener noreferrer">App Store</a
+    >
+
+    <MobileDownloadDrawer
+      appName={siteConfig.appName}
+      appStoreUrl={siteConfig.appStoreUrl}
+      assetBaseUrl={sitePath("")}
+      client:load
+    />
+  </div>
+</header>

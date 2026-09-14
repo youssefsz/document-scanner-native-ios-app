@@ -1,0 +1,55 @@
+---
+import ExpandableList from "@/components/ExpandableList.astro"
+import SectionTitle from "@/components/SectionTitle.astro"
+import { siteConfig } from "../../site.config.mjs"
+
+const questions = [
+  {
+    question: "Does DocScanner upload my documents?",
+    answer:
+      "No. Scans, previews, OCR results, folders, and related metadata stay in the app's local storage. DocScanner does not require an account or upload documents to a server operated by the developer.",
+  },
+  {
+    question: "Can I create a PDF from existing photos?",
+    answer:
+      "Yes. You can select up to 20 images from your photo library in order and turn them into one document. Camera scanning is also available on a physical iPhone or iPad.",
+  },
+  {
+    question: "Does text recognition need an internet connection?",
+    answer:
+      "No. Optical character recognition runs on the device. It can add selectable and searchable text to supported PDFs, using your preferred languages as recognition hints.",
+  },
+  {
+    question: "How do secure folders work?",
+    answer:
+      "Secure folder names, PDFs, previews, and related metadata are encrypted on your device. iOS authorizes access with Face ID, Touch ID, or your device passcode. DocScanner never receives your biometric data.",
+  },
+  {
+    question: "How do password-protected exports work?",
+    answer:
+      "DocScanner encrypts a temporary PDF copy for sharing. The document saved in your library does not change. Send the generated password to the recipient through a separate channel.",
+  },
+  {
+    question: "What does DocScanner Pro include?",
+    answer:
+      "DocScanner Pro unlocks secure folders, password-protected PDF exports, and future Pro features. It is a one-time purchase, not a subscription, and purchases can be restored with the same Apple Account.",
+  },
+  {
+    question: "Where can I download DocScanner?",
+    answer: `${siteConfig.appName} is available on the App Store for iPhone and iPad running iOS or iPadOS 16 or later.`,
+  },
+]
+---
+
+<section class="faq" id="faq" aria-labelledby="faq-title">
+  <div class="shell">
+    <SectionTitle
+      id="faq-title"
+      eyebrow="Questions"
+      title="What stays on your device."
+      description="Straight answers about scanning, offline OCR, encrypted folders, exports, and DocScanner Pro."
+    />
+
+    <ExpandableList items={questions} className="faq__items" />
+  </div>
+</section>

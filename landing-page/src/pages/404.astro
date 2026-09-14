@@ -1,0 +1,16 @@
+---
+import StatusPage from "@/components/StatusPage.astro"
+import Layout from "@/layouts/main.astro"
+---
+
+<Layout
+  title="Page not found | DocScanner"
+  description="The requested DocScanner page could not be found."
+  noindex
+>
+  <StatusPage
+    code="404"
+    title="Page not found"
+    description="The address may be incorrect, or the page may have moved."
+  />
+</Layout>

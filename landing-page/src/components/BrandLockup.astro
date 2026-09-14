@@ -1,0 +1,25 @@
+---
+import { Image } from "astro:assets"
+import brandMark from "@/assets/brand/brand-mark.png"
+import { siteConfig } from "../../site.config.mjs"
+
+interface Props {
+  compact?: boolean
+}
+
+const { compact = false } = Astro.props
+---
+
+<span class:list={["brand-lockup", { "brand-lockup--compact": compact }]}>
+  <span class="brand-lockup__mark" aria-hidden="true">
+    <Image
+      src={brandMark}
+      alt=""
+      width={40}
+      height={40}
+      densities={[1, 2, 3]}
+      format="webp"
+    />
+  </span>
+  <span class="brand-lockup__name">{siteConfig.name}</span>
+</span>

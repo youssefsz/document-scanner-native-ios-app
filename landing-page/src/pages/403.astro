@@ -1,0 +1,16 @@
+---
+import StatusPage from "@/components/StatusPage.astro"
+import Layout from "@/layouts/main.astro"
+---
+
+<Layout
+  title="Access denied | DocScanner"
+  description="You do not have access to the requested DocScanner page."
+  noindex
+>
+  <StatusPage
+    code="403"
+    title="Access denied"
+    description="This link may be private, expired, or unavailable."
+  />
+</Layout>
