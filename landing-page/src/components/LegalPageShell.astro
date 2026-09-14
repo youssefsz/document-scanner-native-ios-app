@@ -1,0 +1,49 @@
+---
+import BrandLockup from "@/components/BrandLockup.astro"
+import { sitePath } from "@/lib/site-path"
+import { siteConfig } from "../../site.config.mjs"
+
+interface Props {
+  eyebrow: string
+  title: string
+  description: string
+}
+
+const { eyebrow, title, description } = Astro.props
+---
+
+<header class="legal-header">
+  <a href={sitePath("")} aria-label="DocScanner home">
+    <BrandLockup />
+  </a>
+  <a
+    class="header-cta"
+    href={siteConfig.appStoreUrl}
+    target="_blank"
+    rel="noopener noreferrer">App Store</a
+  >
+</header>
+
+<main class="legal-page" id="main-content">
+  <div class="legal-page__intro">
+    <p class="eyebrow">{eyebrow}</p>
+    <h1>{title}</h1>
+    <p>{description}</p>
+  </div>
+  <slot />
+</main>
+
+<footer class="legal-footer">
+  <nav aria-label="Legal and support navigation">
+    <a href={sitePath("")}>Home</a>
+    <a href={sitePath("privacy/")}>Privacy</a>
+    <a href={sitePath("support/")}>Support</a>
+    <a href={siteConfig.termsUrl} target="_blank" rel="noopener noreferrer"
+      >Terms</a
+    >
+    <a href={siteConfig.githubUrl} target="_blank" rel="noopener noreferrer"
+      >Source</a
+    >
+  </nav>
+  <p>© {new Date().getFullYear()} DocScanner. All rights reserved.</p>
+</footer>

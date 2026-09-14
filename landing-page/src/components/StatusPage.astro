@@ -1,0 +1,44 @@
+---
+import BrandLockup from "@/components/BrandLockup.astro"
+import { sitePath } from "@/lib/site-path"
+import { siteConfig } from "../../site.config.mjs"
+
+interface Props {
+  code: "403" | "404"
+  title: string
+  description: string
+}
+
+const { code, title, description } = Astro.props
+---
+
+<header class="legal-header status-header">
+  <a href={sitePath("")} aria-label="DocScanner home">
+    <BrandLockup />
+  </a>
+  <a
+    class="header-cta"
+    href={siteConfig.appStoreUrl}
+    target="_blank"
+    rel="noopener noreferrer">App Store</a
+  >
+</header>
+
+<main class="status-page" id="main-content" aria-labelledby="status-title">
+  <p class="status-page__code" aria-hidden="true">{code}</p>
+  <div class="status-page__content">
+    <p class="eyebrow">Error {code}</p>
+    <h1 id="status-title">{title}</h1>
+    <p class="status-page__description">{description}</p>
+    <nav class="status-page__actions" aria-label="Error page actions">
+      <a class="status-page__primary" href={sitePath("")}>Back to homepage</a>
+      <a class="status-page__secondary" href={sitePath("support/")}
+        >Contact support</a
+      >
+    </nav>
+  </div>
+</main>
+
+<footer class="status-footer">
+  <p>© {new Date().getFullYear()} DocScanner. All rights reserved.</p>
+</footer>

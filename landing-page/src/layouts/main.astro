@@ -1,0 +1,74 @@
+---
+import "@/styles/global.css"
+import SEO from "@/components/SEO.astro"
+import { sitePath } from "@/lib/site-path"
+import { siteConfig } from "../../site.config.mjs"
+
+interface Props {
+  title?: string
+  description?: string
+  canonicalPath?: string
+  imagePath?: string
+  noindex?: boolean
+  playIntro?: boolean
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description,
+  canonicalPath,
+  imagePath,
+  noindex = false,
+  playIntro = false,
+} = Astro.props
+---
+
+<html lang={siteConfig.language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <SEO
+      title={title}
+      description={description}
+      canonicalPath={canonicalPath}
+      imagePath={imagePath}
+      noindex={noindex}
+    />
+    <meta name="theme-color" content={siteConfig.themeColor} />
+    <meta name="color-scheme" content="light" />
+    <link
+      rel="icon"
+      type="image/x-icon"
+      sizes="16x16 32x32 48x48"
+      href={sitePath("favicon.ico")}
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="48x48"
+      href={sitePath("favicon.png")}
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href={sitePath("apple-touch-icon.png")}
+    />
+    <link rel="manifest" href={sitePath("site.webmanifest")} />
+    <slot name="head" />
+    <script is:inline define:vars={{ playIntro }}>
+      document.documentElement.classList.add("js")
+      if (
+        playIntro &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        history.scrollRestoration = "manual"
+        window.scrollTo(0, 0)
+        document.documentElement.classList.add("intro-playing")
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <slot />
+  </body>
+</html>

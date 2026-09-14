@@ -1,0 +1,121 @@
+---
+import { siteConfig, siteUrlFor } from "../../site.config.mjs"
+
+interface Props {
+  title?: string
+  description?: string
+  canonicalPath?: string
+  imagePath?: string
+  noindex?: boolean
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description,
+  canonicalPath = Astro.url.pathname,
+  imagePath = siteConfig.ogImagePath,
+  noindex = false,
+} = Astro.props
+
+const canonicalUrl = siteUrlFor(canonicalPath)
+const homeUrl = new URL(siteConfig.url)
+const imageUrl = siteUrlFor(imagePath)
+const logoUrl = siteUrlFor("icons/icon-512.png")
+const robots = noindex
+  ? "noindex, nofollow"
+  : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${homeUrl.href}#website`,
+      url: homeUrl.href,
+      name: siteConfig.name,
+      alternateName: siteConfig.appName,
+      description: siteConfig.description,
+      inLanguage: siteConfig.language,
+    },
+    {
+      "@type": "MobileApplication",
+      "@id": `${homeUrl.href}#app`,
+      name: siteConfig.appName,
+      alternateName: siteConfig.name,
+      description: siteConfig.description,
+      url: homeUrl.href,
+      applicationCategory: "UtilitiesApplication",
+      operatingSystem: "iOS 16 or later; iPadOS 16 or later",
+      downloadUrl: siteConfig.appStoreUrl,
+      installUrl: siteConfig.appStoreUrl,
+      sameAs: [siteConfig.appStoreUrl],
+      image: imageUrl.href,
+      logo: logoUrl.href,
+    },
+    {
+      "@type": "WebPage",
+      "@id": `${canonicalUrl.href}#webpage`,
+      url: canonicalUrl.href,
+      name: title,
+      description,
+      isPartOf: { "@id": `${homeUrl.href}#website` },
+      about: { "@id": `${homeUrl.href}#app` },
+      primaryImageOfPage: {
+        "@type": "ImageObject",
+        url: imageUrl.href,
+        width: 1200,
+        height: 630,
+      },
+      inLanguage: siteConfig.language,
+    },
+  ],
+}
+
+const serializedStructuredData = JSON.stringify(structuredData).replace(
+  /</g,
+  "\\u003c"
+)
+---
+
+<title>{title}</title>
+<meta name="description" content={description} />
+<meta name="application-name" content={siteConfig.appName} />
+<meta name="apple-mobile-web-app-title" content={siteConfig.name} />
+<meta name="apple-itunes-app" content={`app-id=${siteConfig.appStoreId}`} />
+<meta name="robots" content={robots} />
+<meta name="googlebot" content={robots} />
+
+<link rel="canonical" href={canonicalUrl.href} />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content={siteConfig.name} />
+<meta property="og:locale" content={siteConfig.locale} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonicalUrl.href} />
+<meta property="og:image" content={imageUrl.href} />
+{
+  imageUrl.protocol === "https:" && (
+    <meta property="og:image:secure_url" content={imageUrl.href} />
+  )
+}
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={siteConfig.ogImageAlt} />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={imageUrl.href} />
+<meta name="twitter:image:alt" content={siteConfig.ogImageAlt} />
+
+{
+  !noindex && (
+    <script
+      is:inline
+      type="application/ld+json"
+      set:html={serializedStructuredData}
+    />
+  )
+}

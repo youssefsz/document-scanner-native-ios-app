@@ -1,0 +1,21 @@
+---
+import { siteConfig } from "../../site.config.mjs"
+import { sitePath } from "@/lib/site-path"
+---
+
+<a
+  class="store-badge"
+  href={siteConfig.appStoreUrl}
+  target="_blank"
+  rel="noopener noreferrer"
+  aria-label={`Download ${siteConfig.appName} on the App Store`}
+>
+  <img
+    src={sitePath("download-black.svg")}
+    width="120"
+    height="40"
+    alt=""
+    loading="eager"
+    decoding="async"
+  />
+</a>

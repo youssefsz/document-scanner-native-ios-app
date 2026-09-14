@@ -1,0 +1,32 @@
+---
+import BrandLockup from "@/components/BrandLockup.astro"
+import { siteConfig } from "../../site.config.mjs"
+---
+
+<footer class="site-footer">
+  <div class="shell site-footer__inner">
+    <a href="#top" aria-label="DocScanner, back to the top"><BrandLockup /></a>
+    <nav aria-label="Footer navigation">
+      <a href="#experience">Experience</a>
+      <a href="#faq">FAQ</a>
+      <a href={siteConfig.privacyUrl}>Privacy</a>
+      <a href={siteConfig.termsUrl} target="_blank" rel="noopener noreferrer"
+        >Terms</a
+      >
+      <a href={siteConfig.supportUrl}>Support</a>
+      <a href={siteConfig.githubUrl} target="_blank" rel="noopener noreferrer"
+        >Source</a
+      >
+      <a href={siteConfig.appStoreUrl} target="_blank" rel="noopener noreferrer"
+        >App Store</a
+      >
+    </nav>
+    <p>
+      DocScanner stores and processes documents on your device. Export files you
+      need before deleting the app or changing devices.
+    </p>
+    <p class="site-footer__copyright">
+      © {new Date().getFullYear()} DocScanner. All rights reserved.
+    </p>
+  </div>
+</footer>

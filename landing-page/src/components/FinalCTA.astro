@@ -1,0 +1,41 @@
+---
+import { Image } from "astro:assets"
+import appIcon from "@/assets/brand/app-icon.png"
+import documentHero from "@/assets/photography/document-hero.png"
+import AppStoreBadge from "@/components/AppStoreBadge.astro"
+---
+
+<section class="final-cta" id="download" aria-labelledby="final-cta-title">
+  <div class="shell final-cta__panel">
+    <Image
+      class="final-cta__art"
+      src={documentHero}
+      alt=""
+      widths={[768, 1152, 1536]}
+      sizes="(max-width: 720px) 100vw, 70vw"
+      format="webp"
+      loading="lazy"
+      decoding="async"
+    />
+    <div class="final-cta__content">
+      <div class="final-cta__icon-wrap">
+        <Image
+          class="final-cta__icon"
+          src={appIcon}
+          alt=""
+          width={88}
+          height={88}
+          densities={[1, 2, 3]}
+          format="webp"
+        />
+      </div>
+      <p class="eyebrow">DocScanner for iPhone and iPad</p>
+      <h2 id="final-cta-title">Your documents.<br />Your device.</h2>
+      <p>
+        Scan paper, recognize text offline, and keep sensitive files protected
+        without creating an account.
+      </p>
+      <AppStoreBadge />
+    </div>
+  </div>
+</section>

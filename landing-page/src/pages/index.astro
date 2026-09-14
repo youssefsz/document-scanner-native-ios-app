@@ -1,0 +1,118 @@
+---
+import Layout from "@/layouts/main.astro"
+import Experience from "@/components/Experience.astro"
+import FAQ from "@/components/FAQ.astro"
+import FinalCTA from "@/components/FinalCTA.astro"
+import Footer from "@/components/Footer.astro"
+import Header from "@/components/Header.astro"
+import Hero from "@/components/Hero.astro"
+---
+
+<Layout playIntro>
+  <Header />
+  <main id="main-content">
+    <Hero />
+    <Experience />
+    <FAQ />
+    <FinalCTA />
+  </main>
+  <Footer />
+
+  <script>
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const siteHeader = document.querySelector<HTMLElement>("[data-site-header]")
+    const documentRoot = document.documentElement
+    const introFinisher = document.querySelector<HTMLElement>(".hero-devices")
+    let introFallback: number | undefined
+
+    const finishIntro = () => {
+      if (!documentRoot.classList.contains("intro-playing")) return
+
+      documentRoot.classList.remove("intro-playing")
+      introFinisher?.removeEventListener("animationend", finishIntroOnAnimation)
+      if (introFallback) window.clearTimeout(introFallback)
+      window.scrollTo(0, 0)
+      history.scrollRestoration = "auto"
+    }
+
+    const finishIntroOnAnimation = (event: AnimationEvent) => {
+      if (
+        event.target === introFinisher &&
+        event.animationName === "device-fan-enter"
+      )
+        finishIntro()
+    }
+
+    if (documentRoot.classList.contains("intro-playing")) {
+      window.scrollTo(0, 0)
+      introFinisher?.addEventListener("animationend", finishIntroOnAnimation)
+      introFallback = window.setTimeout(finishIntro, 4000)
+    }
+
+    reducedMotion.addEventListener("change", () => {
+      if (reducedMotion.matches) finishIntro()
+    })
+
+    const fanItems = [
+      ...document.querySelectorAll<HTMLElement>("[data-fan-start]"),
+    ]
+    let framePending = false
+    let lastScrollPosition = window.scrollY
+
+    const setHeaderHidden = (hidden: boolean) => {
+      if (!siteHeader) return
+      if (hidden && document.querySelector('[data-slot="drawer-popup"]')) return
+
+      siteHeader.classList.toggle("is-hidden", hidden)
+      siteHeader.toggleAttribute("inert", hidden)
+      if (hidden) siteHeader.setAttribute("aria-hidden", "true")
+      else siteHeader.removeAttribute("aria-hidden")
+    }
+
+    const updateScrollEffects = () => {
+      const introIsPlaying = documentRoot.classList.contains("intro-playing")
+      const currentScrollPosition = introIsPlaying
+        ? 0
+        : Math.max(window.scrollY, 0)
+
+      if (currentScrollPosition <= 24) setHeaderHidden(false)
+      else if (
+        currentScrollPosition > lastScrollPosition &&
+        currentScrollPosition > 96
+      )
+        setHeaderHidden(true)
+      else if (currentScrollPosition < lastScrollPosition)
+        setHeaderHidden(false)
+
+      lastScrollPosition = currentScrollPosition
+
+      if (reducedMotion.matches) {
+        fanItems.forEach((item) => item.style.setProperty("--fan-y", "0px"))
+      } else {
+        const fanProgress = introIsPlaying
+          ? 0
+          : Math.min(Math.max(window.scrollY / 650, 0), 1)
+        fanItems.forEach((item) => {
+          const start = Number(item.dataset.fanStart ?? 0)
+          item.style.setProperty(
+            "--fan-y",
+            `${(start * (1 - fanProgress)).toFixed(2)}px`
+          )
+        })
+      }
+
+      framePending = false
+    }
+
+    const requestScrollUpdate = () => {
+      if (framePending) return
+      framePending = true
+      requestAnimationFrame(updateScrollEffects)
+    }
+
+    updateScrollEffects()
+    window.addEventListener("scroll", requestScrollUpdate, { passive: true })
+    window.addEventListener("resize", requestScrollUpdate)
+    reducedMotion.addEventListener("change", requestScrollUpdate)
+  </script>
+</Layout>

@@ -1,0 +1,76 @@
+---
+import ExpandableList from "@/components/ExpandableList.astro"
+import LegalPageShell from "@/components/LegalPageShell.astro"
+import Layout from "@/layouts/main.astro"
+import { siteConfig } from "../../site.config.mjs"
+
+const questions = [
+  {
+    question: "How do I restore DocScanner Pro?",
+    answer:
+      "Open the Pro screen and choose Restore Purchases. Use the same Apple Account that made the original one-time purchase.",
+  },
+  {
+    question: "Why can I not scan a document?",
+    answer:
+      "Open iOS Settings, find DocScanner, and confirm that Camera access is enabled. Camera scanning requires a physical iPhone or iPad.",
+  },
+  {
+    question: "Where are my documents stored?",
+    answer:
+      "Documents stay in the app's local storage on your device. DocScanner does not provide an account or developer-operated cloud library. Export files you need before deleting the app or changing devices.",
+  },
+  {
+    question: "How do secure folders work?",
+    answer:
+      "Secure folder names, PDFs, previews, and related metadata are encrypted on the device. iOS uses Face ID, Touch ID, or your device passcode to authorize access. DocScanner does not receive your biometric data.",
+  },
+  {
+    question: "How do password-protected exports work?",
+    answer:
+      "Choose password protection when preparing a PDF copy for sharing. The exported copy is encrypted, while the document saved in DocScanner stays unchanged. Send the password through a separate channel.",
+  },
+]
+---
+
+<Layout
+  title="DocScanner support | Scanning, OCR, folders, and exports"
+  description="Get help with DocScanner scanning, offline OCR, local documents, secure folders, PDF exports, and DocScanner Pro purchase restoration."
+>
+  <LegalPageShell
+    eyebrow="Support"
+    title="Help with DocScanner."
+    description="Answers for scanning, folders, secure files, PDF exports, and DocScanner Pro."
+  >
+    <section class="support-contact" aria-labelledby="contact-title">
+      <div class="support-contact__heading">
+        <p class="eyebrow">Direct support</p>
+        <h2 id="contact-title">Tell us what happened.</h2>
+      </div>
+      <div class="support-contact__details">
+        <p>
+          Include the app version, iOS version, and the steps that reproduce the
+          problem. Do not attach a sensitive document unless it is necessary and
+          you are comfortable sending it by email.
+        </p>
+        <a
+          class="support-email-link"
+          href={`mailto:${siteConfig.supportEmail}?subject=DocScanner%20Support`}
+        >
+          <span>Email support</span>
+          <strong>{siteConfig.supportEmail}</strong>
+          <span aria-hidden="true">&#8599;</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="support-guide" aria-labelledby="support-questions-title">
+      <header class="support-guide__header">
+        <p class="eyebrow">Quick answers</p>
+        <h2 id="support-questions-title">Common questions</h2>
+        <p>Clear answers about your scans, security, exports, and purchase.</p>
+      </header>
+      <ExpandableList items={questions} className="support-questions" />
+    </section>
+  </LegalPageShell>
+</Layout>
