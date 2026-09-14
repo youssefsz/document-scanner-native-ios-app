@@ -57,4 +57,34 @@ final class V2OnboardingPresentationTests: XCTestCase {
             )
         )
     }
+
+    func testLaunchPresentsOnboardingBeforePaywallForNewUsers() {
+        XCTAssertEqual(
+            AppLaunchPresentation.destination(
+                lastSeenMajorIntroduction: 0,
+                loadState: .empty
+            ),
+            .onboarding
+        )
+    }
+
+    func testLaunchPresentsPaywallForReturningUsers() {
+        XCTAssertEqual(
+            AppLaunchPresentation.destination(
+                lastSeenMajorIntroduction: 2,
+                loadState: .loaded
+            ),
+            .paywall
+        )
+    }
+
+    func testLaunchWaitsForLibraryBeforePresentingAnything() {
+        XCTAssertEqual(
+            AppLaunchPresentation.destination(
+                lastSeenMajorIntroduction: 2,
+                loadState: .initialLoading
+            ),
+            .none
+        )
+    }
 }

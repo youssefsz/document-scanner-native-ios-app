@@ -5,10 +5,19 @@ private struct ProFeatureRequestActionKey: EnvironmentKey {
     static let defaultValue: @MainActor (ProFeature, @escaping @MainActor () -> Void) -> Void = { _, _ in }
 }
 
+private struct ProPaywallPresentationActionKey: EnvironmentKey {
+    static let defaultValue: @MainActor () -> Void = {}
+}
+
 extension EnvironmentValues {
     var requestProFeature: @MainActor (ProFeature, @escaping @MainActor () -> Void) -> Void {
         get { self[ProFeatureRequestActionKey.self] }
         set { self[ProFeatureRequestActionKey.self] = newValue }
+    }
+
+    var presentProPaywall: @MainActor () -> Void {
+        get { self[ProPaywallPresentationActionKey.self] }
+        set { self[ProPaywallPresentationActionKey.self] = newValue }
     }
 }
 
@@ -30,6 +39,7 @@ private struct ProPaywallHostModifier: ViewModifier {
     @ObservedObject private var store: ProStore
     @State private var pendingRequest: PendingProFeatureRequest?
     @State private var isPaywallPresented = false
+    @State private var isLaunchRequestPending = false
     @State private var shouldContinueAfterDismissal = false
 
     init(store: ProStore) {
@@ -39,6 +49,7 @@ private struct ProPaywallHostModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.requestProFeature, request)
+            .environment(\.presentProPaywall, presentLaunchPaywall)
             .sheet(isPresented: $isPaywallPresented, onDismiss: paywallDidDismiss) {
                 ProPaywallPresenter(store: store) {
                     shouldContinueAfterDismissal = true
@@ -51,7 +62,9 @@ private struct ProPaywallHostModifier: ViewModifier {
     }
 
     private func request(_ feature: ProFeature, onGranted: @escaping @MainActor () -> Void) {
-        guard pendingRequest == nil else { return }
+        guard pendingRequest == nil,
+              !isLaunchRequestPending,
+              !isPaywallPresented else { return }
         if store.hasAccess(to: feature) {
             onGranted()
             return
@@ -73,13 +86,34 @@ private struct ProPaywallHostModifier: ViewModifier {
         }
     }
 
+    private func presentLaunchPaywall() {
+        guard pendingRequest == nil,
+              !isLaunchRequestPending,
+              !isPaywallPresented,
+              !store.hasProAccess else { return }
+
+        isLaunchRequestPending = true
+        Task { @MainActor in
+            if store.entitlementState == .unknown {
+                _ = await store.refreshEntitlement()
+            }
+            guard isLaunchRequestPending else { return }
+            isLaunchRequestPending = false
+            guard !store.hasProAccess else { return }
+            isPaywallPresented = true
+        }
+    }
+
     private func paywallDidDismiss() {
-        guard let request = pendingRequest else { return }
+        let request = pendingRequest
         pendingRequest = nil
+        isLaunchRequestPending = false
         let shouldContinue = shouldContinueAfterDismissal
         shouldContinueAfterDismissal = false
         store.resetPresentationState()
-        if shouldContinue, store.hasAccess(to: request.feature) {
+        if let request,
+           shouldContinue,
+           store.hasAccess(to: request.feature) {
             request.onGranted()
         }
     }
