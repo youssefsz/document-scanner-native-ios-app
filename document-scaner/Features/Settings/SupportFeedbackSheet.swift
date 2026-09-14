@@ -19,19 +19,24 @@ struct SupportFeedbackSheet: View {
                             dismiss()
                             onSelectTopic(topic)
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 14) {
                                 Image(systemName: topic.systemImage)
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                    .frame(width: 24)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 38, height: 38)
+                                    .background(
+                                        topic.tintColor,
+                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    )
+                                    .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(topic.title)
-                                        .font(.body)
+                                        .font(.body.weight(.semibold))
                                         .foregroundStyle(.primary)
 
                                     Text(topic.subtitle)
-                                        .font(.footnote)
+                                        .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -41,14 +46,19 @@ struct SupportFeedbackSheet: View {
                                 Image(systemName: "chevron.right")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.tertiary)
+                                    .accessibilityHidden(true)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 6)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityElement(children: .combine)
                         .accessibilityHint("Opens a prefilled support email.")
                     }
+                } header: {
+                    Text("Choose a topic")
+                } footer: {
+                    Text("We'll prepare an email with your app version and device details. You can review everything before sending.")
                 }
             }
             .listStyle(.insetGrouped)
@@ -61,6 +71,23 @@ struct SupportFeedbackSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+private extension SupportTopic {
+    var tintColor: Color {
+        switch self {
+        case .bugReport:
+            .red
+        case .contentIssue:
+            .orange
+        case .featureSuggestion:
+            .yellow
+        case .technicalSupport:
+            .blue
+        case .generalFeedback:
+            .purple
         }
     }
 }

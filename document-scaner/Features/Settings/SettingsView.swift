@@ -195,7 +195,7 @@ struct SettingsView: View {
             SupportFeedbackSheet { topic in
                 pendingSupportTopic = topic
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .sheet(item: $activeSupportDraft, onDismiss: finishSupportFlow) { draft in
