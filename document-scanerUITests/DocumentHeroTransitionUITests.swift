@@ -46,4 +46,36 @@ final class DocumentHeroTransitionUITests: XCTestCase {
         librarySections.buttons["Library"].tap()
         XCTAssertTrue(librarySections.buttons["Library"].isSelected)
     }
+
+    func testDocumentOpensAndClosesFromOrdinaryFolder() throws {
+        let app = XCUIApplication()
+        app.launch()
+        let librarySections = app.segmentedControls["library-section-picker"]
+        XCTAssertTrue(librarySections.waitForExistence(timeout: 10))
+        librarySections.buttons["Folders"].tap()
+
+        let populatedFolders = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label MATCHES %@",
+            "folder-card-", ".*, [1-9][0-9]* documents?"
+        ))
+        let folder = populatedFolders.firstMatch
+        guard folder.waitForExistence(timeout: 5) else {
+            throw XCTSkip("This device has no populated ordinary folder for the transition test.")
+        }
+        folder.tap()
+
+        let documentCards = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "document-card-"))
+        let firstCard = documentCards.firstMatch
+        XCTAssertTrue(firstCard.waitForExistence(timeout: 10))
+        let closeButton = app.buttons["document-viewer-close"]
+        let pageViewer = app.otherElements["document-page-pager"]
+        for _ in 1...2 {
+            firstCard.tap()
+            XCTAssertTrue(closeButton.waitForExistence(timeout: 10))
+            XCTAssertTrue(pageViewer.waitForExistence(timeout: 10))
+            closeButton.tap()
+            XCTAssertTrue(firstCard.waitForExistence(timeout: 10))
+        }
+    }
 }

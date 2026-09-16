@@ -70,21 +70,19 @@ struct FolderDetailView: View {
                 } else {
                     LazyVGrid(columns: folderColumns, spacing: 16) {
                         ForEach(documents) { document in
-                            DocumentCard(
+                            LibraryDocumentTile(
                                 document: document,
+                                cardWidth: nil,
                                 isSelectionMode: isSelectionMode,
-                                isSelected: selectedDocumentIDs.contains(document.id)
+                                isSelected: selectedDocumentIDs.contains(document.id),
+                                onTap: { handleTap(document) },
+                                onLongPress: { beginSelection(document) }
                             )
-                                .frame(height: DocumentCardLayout.totalCardHeight)
                                 .documentHeroSource(
                                     id: document.id,
                                     in: documentHeroNamespace,
                                     enabled: !accessibilityReduceMotion
                                 )
-                                .onTapGesture { handleTap(document) }
-                                .onLongPressGesture(minimumDuration: 0.35) { beginSelection(document) }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityAddTraits(.isButton)
                         }
                     }
                     .padding(16)

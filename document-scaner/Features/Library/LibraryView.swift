@@ -444,6 +444,7 @@ struct LibraryView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("folder-card-\(summary.id.uuidString)")
                     .disabled(authenticatingFolderID != nil)
                     .contextMenu {
                         Button {
