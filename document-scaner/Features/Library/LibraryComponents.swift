@@ -70,6 +70,7 @@ struct LibraryDocumentTile: View {
         .accessibilityLabel(document.title)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityHint(isSelectionMode ? "Double tap to toggle selection." : "Double tap to open. Long press to start selecting.")
+        .accessibilityIdentifier("document-card-\(document.id.uuidString)")
         .accessibilityAddTraits(.isButton)
     }
 }

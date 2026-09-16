@@ -35,6 +35,20 @@
                ReferencedContainer = "container:document-scaner.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B556B93C29459926BE0D9738"
+               BuildableName = "document-scanerUITests.xctest"
+               BlueprintName = "document-scanerUITests"
+               ReferencedContainer = "container:document-scaner.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -52,6 +66,16 @@
                BlueprintIdentifier = "A1B2C3D72F5C963900C877D8"
                BuildableName = "document-scanerTests.xctest"
                BlueprintName = "document-scanerTests"
+               ReferencedContainer = "container:document-scaner.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B556B93C29459926BE0D9738"
+               BuildableName = "document-scanerUITests.xctest"
+               BlueprintName = "document-scanerUITests"
                ReferencedContainer = "container:document-scaner.xcodeproj">
             </BuildableReference>
          </TestableReference>

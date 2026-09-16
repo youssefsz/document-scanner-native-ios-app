@@ -74,6 +74,7 @@ struct DocumentDetailView: View {
                 Color.black.ignoresSafeArea()
             }
         }
+        .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
         .task(id: document.id) {
             await loadPages()
@@ -230,15 +231,18 @@ struct DocumentDetailView: View {
             ViewerControlButton(systemImage: "xmark") {
                 dismiss()
             }
+            .accessibilityLabel("Close document")
+            .accessibilityIdentifier("document-viewer-close")
 
             VStack(spacing: 4) {
                 Text(currentDocument.title)
                     .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
 
                 Text(currentDocument.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)

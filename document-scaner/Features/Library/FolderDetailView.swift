@@ -21,6 +21,7 @@ struct FolderDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedDocument: ScannedDocument?
+    @Namespace private var documentHeroNamespace
     @State private var showsRename = false
     @State private var showsDelete = false
     @State private var isDeleting = false
@@ -75,6 +76,11 @@ struct FolderDetailView: View {
                                 isSelected: selectedDocumentIDs.contains(document.id)
                             )
                                 .frame(height: DocumentCardLayout.totalCardHeight)
+                                .documentHeroSource(
+                                    id: document.id,
+                                    in: documentHeroNamespace,
+                                    enabled: !accessibilityReduceMotion
+                                )
                                 .onTapGesture { handleTap(document) }
                                 .onLongPressGesture(minimumDuration: 0.35) { beginSelection(document) }
                                 .accessibilityElement(children: .combine)
@@ -162,7 +168,13 @@ struct FolderDetailView: View {
         }
         .onChange(of: library.allDocuments) { _ in reloadToken = UUID() }
         .fullScreenCover(item: $selectedDocument) { document in
-            DocumentDetailView(document: document).environmentObject(library)
+            DocumentDetailView(document: document)
+                .environmentObject(library)
+                .documentHeroDestination(
+                    id: document.id,
+                    in: documentHeroNamespace,
+                    reduceMotion: accessibilityReduceMotion
+                )
         }
         .documentPhotoImporter(
             isPresented: $isPhotoImporterPresented,
