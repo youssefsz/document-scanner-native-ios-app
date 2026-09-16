@@ -27,7 +27,11 @@ final class DocumentHeroTransitionUITests: XCTestCase {
             closeButton.tap()
             XCTAssertTrue(firstCard.waitForExistence(timeout: 10))
             XCTAssertTrue(librarySections.waitForExistence(timeout: 10), "Library sections disappeared after closing the viewer")
-            XCTAssertFalse(closeButton.exists)
+            let viewerDismissed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"),
+                object: closeButton
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [viewerDismissed], timeout: 10), .completed)
         }
 
         let libraryScreenshot = XCTAttachment(screenshot: app.screenshot())

@@ -10,7 +10,15 @@ extension View {
     @ViewBuilder
     func documentHeroSource(id: UUID, in namespace: Namespace.ID, enabled: Bool) -> some View {
         if #available(iOS 18.0, *), enabled {
-            matchedTransitionSource(id: id, in: namespace)
+            matchedTransitionSource(id: id, in: namespace) { source in
+                source
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(
+                        cornerRadius: DocumentCardLayout.cardCornerRadius,
+                        style: .continuous
+                    ))
+                    .shadow(color: .clear, radius: 0)
+            }
         } else {
             self
         }
