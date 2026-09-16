@@ -368,6 +368,7 @@ final class ThumbnailPipelineTests: XCTestCase {
         let loaded = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
         let first = try XCTUnwrap(loaded)
         XCTAssertNotNil(pipeline.cachedImage(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2))
+        XCTAssertTrue(first === pipeline.cachedPreviewImage(for: url))
         _ = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
 
         XCTAssertLessThanOrEqual(max(first.size.width * first.scale, first.size.height * first.scale), 200)
@@ -375,8 +376,37 @@ final class ThumbnailPipelineTests: XCTestCase {
         XCTAssertEqual(cachedDecodeCount, 1)
         await pipeline.clearCache()
         XCTAssertNil(pipeline.cachedImage(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2))
+        XCTAssertNil(pipeline.cachedPreviewImage(for: url))
         _ = await pipeline.image(for: url, pointSize: CGSize(width: 100, height: 80), scale: 2)
         let clearedDecodeCount = await pipeline.diagnosticsDecodeCount()
         XCTAssertEqual(clearedDecodeCount, 2)
+    }
+
+    func testSecurePreviewHandoffIsScopedToSessionAndCleared() async throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 600))
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 600))
+        }
+        let data = try XCTUnwrap(image.jpegData(compressionQuality: 0.8))
+        let pipeline = SecureThumbnailPipeline()
+        let documentID = UUID()
+        let sessionID = UUID()
+
+        let loaded = await pipeline.image(
+            from: data,
+            documentID: documentID,
+            sessionID: sessionID,
+            pointSize: CGSize(width: 120, height: 180),
+            scale: 2
+        )
+        let cached = await pipeline.cachedPreviewImage(documentID: documentID, sessionID: sessionID)
+        XCTAssertTrue(loaded === cached)
+        let otherSession = await pipeline.cachedPreviewImage(documentID: documentID, sessionID: UUID())
+        XCTAssertNil(otherSession)
+
+        await pipeline.clearAll()
+        let cleared = await pipeline.cachedPreviewImage(documentID: documentID, sessionID: sessionID)
+        XCTAssertNil(cleared)
     }
 }

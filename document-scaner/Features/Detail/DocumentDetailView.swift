@@ -17,6 +17,9 @@ struct DocumentDetailView: View {
     init(document: ScannedDocument, secureAccess: VaultAccess? = nil) {
         self.document = document
         self.secureAccess = secureAccess
+        let preview = document.isSecure ? nil : ThumbnailPipeline.shared.cachedPreviewImage(for: document.previewURL)
+        _renderedPages = State(initialValue: preview.map { [DocumentPageSnapshot(id: 0, image: $0, isPreview: true)] } ?? [])
+        _isLoadingPreview = State(initialValue: preview == nil)
         _secureTitleOverride = State(initialValue: document.isSecure ? document.title : nil)
     }
 
@@ -180,6 +183,7 @@ struct DocumentDetailView: View {
             onSingleTap: toggleControls,
             onZoomStateChange: handleZoomStateChange
         )
+        .accessibilityIdentifier("document-page-pager")
         .background(Color.black)
         .ignoresSafeArea()
     }
@@ -259,7 +263,7 @@ struct DocumentDetailView: View {
     private var bottomBar: some View {
         VStack(spacing: 14) {
             if !renderedPages.isEmpty {
-                Text("Page \(currentPageNumber) of \(renderedPages.count)")
+                Text("Page \(currentPageNumber) of \(currentDocument.pageCount)")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -319,7 +323,7 @@ struct DocumentDetailView: View {
     private var currentPageNumber: Int {
         guard !renderedPages.isEmpty else { return 0 }
         guard let currentPageID else { return 1 }
-        return min(max(currentPageID + 1, 1), renderedPages.count)
+        return min(max(currentPageID + 1, 1), currentDocument.pageCount)
     }
 
     private var currentDocument: ScannedDocument {
@@ -407,59 +411,75 @@ struct DocumentDetailView: View {
     }
 
     private func loadPages() async {
-        isLoadingPreview = true
+        isLoadingPreview = renderedPages.isEmpty
         previewErrorMessage = nil
-        renderedPages = []
-        currentPageID = nil
+        currentPageID = renderedPages.first?.id
         showsControls = true
         zoomedPageID = nil
 
-        let pdfDocument: PDFDocument
+        let source: DocumentPageSource
         if currentDocument.isSecure {
             guard let secureAccess else {
-                previewErrorMessage = LibraryRepositoryError.secureAccessRequired.localizedDescription
-                isLoadingPreview = false
+                showPreviewError(LibraryRepositoryError.secureAccessRequired.localizedDescription)
                 return
             }
             do {
-                let data = try await library.secureAssetData(for: currentDocument, kind: .pdf, access: secureAccess)
-                guard let decryptedDocument = PDFDocument(data: data), decryptedDocument.pageCount > 0 else {
-                    throw DocumentExportError.sourceDocumentUnreadable
+                if renderedPages.isEmpty,
+                   let preview = await SecureThumbnailPipeline.shared.cachedPreviewImage(
+                    documentID: document.id,
+                    sessionID: secureAccess.sessionID
+                   ) {
+                    guard !Task.isCancelled else { return }
+                    renderedPages = [DocumentPageSnapshot(id: 0, image: preview, isPreview: true)]
+                    currentPageID = 0
+                    isLoadingPreview = false
                 }
-                pdfDocument = decryptedDocument
+                let data = try await library.secureAssetData(for: currentDocument, kind: .pdf, access: secureAccess)
+                source = .data(data)
             } catch {
-                previewErrorMessage = error.localizedDescription
-                isLoadingPreview = false
+                showPreviewError(error.localizedDescription)
                 return
             }
         } else {
             let url = currentDocument.pdfURL
             guard FileManager.default.fileExists(atPath: url.path) else {
-                previewErrorMessage = "The PDF file is missing from local storage."
-                isLoadingPreview = false
+                showPreviewError("The PDF file is missing from local storage.")
                 return
             }
-            guard let storedDocument = PDFDocument(url: url), storedDocument.pageCount > 0 else {
-                previewErrorMessage = "The PDF file exists, but the app could not read it."
-                isLoadingPreview = false
-                return
+            source = .url(url)
+        }
+
+        do {
+            for try await page in DocumentPageLoader.pages(from: source) {
+                guard !Task.isCancelled else { return }
+                if renderedPages.first?.isPreview == true, page.id == 0 {
+                    renderedPages[0] = page
+                } else {
+                    if renderedPages.first?.isPreview == true {
+                        renderedPages = []
+                    }
+                    renderedPages.append(page)
+                }
+                if renderedPages.count == 1 {
+                    currentPageID = page.id
+                    isLoadingPreview = false
+                }
             }
-            pdfDocument = storedDocument
+            guard !Task.isCancelled else { return }
+            if renderedPages.allSatisfy(\.isPreview) {
+                showPreviewError("The PDF loaded, but no pages could be rendered.")
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            showPreviewError(error.localizedDescription)
         }
+    }
 
-        let pages = (0..<pdfDocument.pageCount).compactMap { index -> DocumentPageSnapshot? in
-            guard let page = pdfDocument.page(at: index) else { return nil }
-            return DocumentPageSnapshot(id: index, image: DocumentPageRenderer.render(page: page))
+    private func showPreviewError(_ message: String) {
+        if renderedPages.allSatisfy(\.isPreview) {
+            renderedPages = []
         }
-
-        guard !pages.isEmpty else {
-            previewErrorMessage = "The PDF loaded, but no pages could be rendered."
-            isLoadingPreview = false
-            return
-        }
-
-        renderedPages = pages
-        currentPageID = pages.first?.id
+        previewErrorMessage = message
         isLoadingPreview = false
     }
 
@@ -682,9 +702,10 @@ private struct ViewerControlButton: View {
     }
 }
 
-struct DocumentPageSnapshot: Identifiable {
+struct DocumentPageSnapshot: Identifiable, @unchecked Sendable {
     let id: Int
     let image: UIImage
+    var isPreview = false
 }
 
 private struct ActivityShareSheet: UIViewControllerRepresentable {

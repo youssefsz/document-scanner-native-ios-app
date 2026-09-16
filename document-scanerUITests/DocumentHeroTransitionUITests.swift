@@ -15,9 +15,11 @@ final class DocumentHeroTransitionUITests: XCTestCase {
         let librarySections = app.segmentedControls["library-section-picker"]
         XCTAssertTrue(librarySections.waitForExistence(timeout: 10))
         let closeButton = app.buttons["document-viewer-close"]
+        let pageViewer = app.otherElements["document-page-pager"]
         for attempt in 1...4 {
             firstCard.tap()
             XCTAssertTrue(closeButton.waitForExistence(timeout: 10))
+            XCTAssertTrue(pageViewer.waitForExistence(timeout: 10), "The document's first page did not load")
             if attempt == 1 {
                 let viewerScreenshot = XCTAttachment(screenshot: app.screenshot())
                 viewerScreenshot.name = "Document viewer"

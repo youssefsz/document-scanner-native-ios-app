@@ -137,7 +137,11 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         let newPageIDs = pages.map(\.id)
 
         if pageIDs != newPageIDs {
-            rebuildPageViews(for: pages)
+            if newPageIDs.starts(with: pageIDs) {
+                appendPageViews(count: newPageIDs.count - pageIDs.count)
+            } else {
+                rebuildPageViews(for: pages)
+            }
         }
 
         for (pageView, page) in zip(pageViews, pages) {
@@ -162,12 +166,17 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
             pageView.removeFromSuperview()
         }
 
-        pageViews = pages.map { _ in
+        pageViews = []
+        appendPageViews(count: pages.count)
+    }
+
+    private func appendPageViews(count: Int) {
+        for _ in 0..<count {
             let pageView = DocumentPageHostView()
             pageView.translatesAutoresizingMaskIntoConstraints = false
             stackView.addArrangedSubview(pageView)
             pageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor).isActive = true
-            return pageView
+            pageViews.append(pageView)
         }
     }
 
@@ -227,6 +236,7 @@ private final class DocumentPageHostView: UIView {
     ) {
         pageView.configure(
             image: page.image,
+            isPreview: page.isPreview,
             pageInsets: UIEdgeInsets(top: 28, left: 20, bottom: 28, right: 20),
             onSingleTap: onSingleTap,
             onZoomStateChange: onZoomStateChange
@@ -263,6 +273,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
     private let imageView = UIImageView()
     private let pageBackgroundView = UIView()
     private var currentImageIdentifier: ObjectIdentifier?
+    private var currentImageIsPreview = false
     private var isZoomed = false
     private var needsInitialPositioning = false
     private var pageInsets: UIEdgeInsets = .zero
@@ -283,6 +294,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
 
     func configure(
         image: UIImage,
+        isPreview: Bool,
         pageInsets: UIEdgeInsets,
         onSingleTap: @escaping () -> Void,
         onZoomStateChange: @escaping (Bool) -> Void
@@ -299,12 +311,20 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         }
 
         if currentImageIdentifier != identifier {
+            let isReplacingPreview = currentImageIsPreview && !isPreview && imageView.image != nil
             currentImageIdentifier = identifier
-            imageView.image = image
-            isZoomed = false
-            scrollView.panGestureRecognizer.isEnabled = false
-            needsInitialPositioning = true
-            pageCanvasView.isHidden = true
+            currentImageIsPreview = isPreview
+            if isReplacingPreview {
+                UIView.transition(with: imageView, duration: 0.2, options: .transitionCrossDissolve) {
+                    self.imageView.image = image
+                }
+            } else {
+                imageView.image = image
+                isZoomed = false
+                scrollView.panGestureRecognizer.isEnabled = false
+                needsInitialPositioning = true
+                pageCanvasView.isHidden = true
+            }
             needsLayoutUpdate = true
         }
 
@@ -492,7 +512,50 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
     }
 }
 
-enum DocumentPageRenderer {
+nonisolated enum DocumentPageSource: Sendable {
+    case url(URL)
+    case data(Data)
+}
+
+nonisolated enum DocumentPageLoadError: LocalizedError {
+    case unreadable
+
+    var errorDescription: String? {
+        "The PDF file exists, but the app could not read it."
+    }
+}
+
+nonisolated enum DocumentPageLoader {
+    static func pages(from source: DocumentPageSource) -> AsyncThrowingStream<DocumentPageSnapshot, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                let document: PDFDocument?
+                switch source {
+                case .url(let url):
+                    document = PDFDocument(url: url)
+                case .data(let data):
+                    document = PDFDocument(data: data)
+                }
+
+                guard let document, document.pageCount > 0 else {
+                    continuation.finish(throwing: DocumentPageLoadError.unreadable)
+                    return
+                }
+
+                for index in 0..<document.pageCount {
+                    guard !Task.isCancelled else { break }
+                    guard let page = document.page(at: index) else { continue }
+                    let snapshot = DocumentPageSnapshot(id: index, image: DocumentPageRenderer.render(page: page))
+                    continuation.yield(snapshot)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+nonisolated enum DocumentPageRenderer {
     static func render(page: PDFPage) -> UIImage {
         let bounds = page.bounds(for: .mediaBox)
         let fallbackSize = CGSize(width: 1200, height: 1600)
