@@ -389,7 +389,7 @@ final class DocumentLibrary: ObservableObject {
                 reason: target == .secure ? "Make \(folder.name) secure" : "Remove security from \(folder.name)"
             )
             secureSessions.begin(access)
-            let task = Task {
+            let task = Task { [self] in
                 try await securityCoordinator.convertFolder(id: folder.id, to: target, access: access) { progress in
                     Task { @MainActor [weak self] in
                         self?.securityConversionProgress[folder.id] = progress
