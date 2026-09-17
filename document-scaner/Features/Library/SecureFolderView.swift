@@ -149,6 +149,7 @@ private struct SecureFolderDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedDocument: ScannedDocument?
+    @Namespace private var documentHeroNamespace
     @State private var selectedDocumentIDs: Set<UUID> = []
     @State private var isSelectionMode = false
     @State private var showsMove = false
@@ -196,6 +197,11 @@ private struct SecureFolderDetailView: View {
                             .onTapGesture { handleTap(document) }
                             .onLongPressGesture(minimumDuration: 0.35) { beginSelection(document) }
                             .accessibilityAddTraits(.isButton)
+                            .documentHeroSource(
+                                id: document.id,
+                                in: documentHeroNamespace,
+                                enabled: !accessibilityReduceMotion
+                            )
                     }
                 }
                 .padding(16)
@@ -268,6 +274,11 @@ private struct SecureFolderDetailView: View {
         }) { document in
             DocumentDetailView(document: document, secureAccess: access)
                 .environmentObject(library)
+                .documentHeroDestination(
+                    id: document.id,
+                    in: documentHeroNamespace,
+                    reduceMotion: accessibilityReduceMotion
+                )
         }
         .documentPhotoImporter(
             isPresented: $isPhotoImporterPresented,

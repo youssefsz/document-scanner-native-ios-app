@@ -22,38 +22,55 @@ struct SearchablePDFRenderer {
         guard !pages.isEmpty else {
             throw DocumentStoreError.pdfCreationFailed
         }
-
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-
-        if fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
-        }
-
-        guard let context = makeContext(for: url, pageRect: pages[0].pageRect) else {
-            throw DocumentStoreError.pdfCreationFailed
-        }
-
-        var searchableTokens: [String] = []
-
+        let writer = try Writer(url: url, firstPageRect: pages[0].pageRect)
         for page in pages {
+            writer.append(page)
+        }
+        return writer.finish()
+    }
+
+    nonisolated final class Writer {
+        private let context: CGContext
+        private let renderer = SearchablePDFRenderer()
+        private var searchableTokens: Set<String> = []
+        private var didFinish = false
+
+        nonisolated init(url: URL, firstPageRect: CGRect) throws {
+            let fileManager = FileManager.default
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            guard let context = renderer.makeContext(for: url, pageRect: firstPageRect) else {
+                throw DocumentStoreError.pdfCreationFailed
+            }
+            self.context = context
+        }
+
+        nonisolated func append(_ page: ScanPageContent) {
             var mediaBox = page.pageRect
             context.beginPDFPage([kCGPDFContextMediaBox as String: NSData(bytes: &mediaBox, length: MemoryLayout<CGRect>.size)] as CFDictionary)
-            drawBackground(page.raster, in: page.pageRect, context: context)
-            drawInvisibleText(for: page, in: context)
+            renderer.drawBackground(page.raster, in: page.pageRect, context: context)
+            renderer.drawInvisibleText(for: page, in: context)
             context.endPDFPage()
-            searchableTokens.append(contentsOf: page.searchableTokens)
+            searchableTokens.formUnion(page.searchableTokens)
         }
 
-        context.closePDF()
+        nonisolated func finish() -> SearchablePDFRenderResult {
+            context.closePDF()
+            didFinish = true
+            return SearchablePDFRenderResult(
+                containsEmbeddedText: !searchableTokens.isEmpty,
+                searchableTokens: Array(searchableTokens)
+            )
+        }
 
-        return SearchablePDFRenderResult(
-            containsEmbeddedText: !searchableTokens.isEmpty,
-            searchableTokens: Array(Set(searchableTokens))
-        )
+        deinit {
+            if !didFinish { context.closePDF() }
+        }
     }
 
     nonisolated static func renderUprightRaster(from page: PDFPage, maxDimension: CGFloat = 2_400) throws -> ScanPageRaster {
@@ -61,7 +78,7 @@ struct SearchablePDFRenderer {
         let fallbackSize = CGSize(width: 1200, height: 1600)
         let pageSize = sourceBounds.isEmpty ? fallbackSize : sourceBounds.size
         let longestSide = max(pageSize.width, pageSize.height, 1)
-        let scale = min(1, maxDimension / longestSide)
+        let scale = maxDimension / longestSide
         let renderSize = CGSize(
             width: max(pageSize.width * scale, 1),
             height: max(pageSize.height * scale, 1)

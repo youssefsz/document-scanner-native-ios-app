@@ -37,18 +37,15 @@ actor DocumentStore {
     private let repository: any LibraryRepository
     private let paths: StoragePaths
     private let ocrService: OCRService
-    private let searchablePDFRenderer: SearchablePDFRenderer
 
     init(
         repository: any LibraryRepository = CoreDataLibraryRepository(),
         paths: StoragePaths = .production,
-        ocrService: OCRService = OCRService(),
-        searchablePDFRenderer: SearchablePDFRenderer = SearchablePDFRenderer()
+        ocrService: OCRService = OCRService()
     ) {
         self.repository = repository
         self.paths = paths
         self.ocrService = ocrService
-        self.searchablePDFRenderer = searchablePDFRenderer
     }
 
     func loadDocuments() async throws -> [ScannedDocument] {
@@ -91,11 +88,15 @@ actor DocumentStore {
         try JSONEncoder().encode(manifest)
             .write(to: operationDirectory.appendingPathComponent("operation.json"), options: .atomic)
 
-        let pageContents = try await makePageContents(from: pages)
         let previewData = try makePreview(from: firstPage)
 
         _ = try await writeMasterPDF(
-            pageContents: pageContents,
+            pageCount: pages.count,
+            loadPage: { index, includeOCR in
+                let raster = try ScanPageRasterizer.makeUprightRaster(from: pages[index])
+                let lines = includeOCR ? await self.recognizeTextSafely(in: raster) : []
+                return ScanPageContent(raster: raster, lines: lines)
+            },
             destinationURL: stagedPDFURL,
             replacingExistingFile: false,
             allowImageOnlyFallback: true
@@ -162,10 +163,14 @@ actor DocumentStore {
         let previewURL = operationDirectory.appendingPathComponent("source-preview.jpg")
 
         do {
-            let pageContents = try await makePageContents(from: pages)
             let previewData = try makePreview(from: firstPage)
             _ = try await writeMasterPDF(
-                pageContents: pageContents,
+                pageCount: pages.count,
+                loadPage: { index, includeOCR in
+                    let raster = try ScanPageRasterizer.makeUprightRaster(from: pages[index])
+                    let lines = includeOCR ? await self.recognizeTextSafely(in: raster) : []
+                    return ScanPageContent(raster: raster, lines: lines)
+                },
                 destinationURL: pdfURL,
                 replacingExistingFile: false,
                 allowImageOnlyFallback: true,
@@ -224,13 +229,19 @@ actor DocumentStore {
         }
 
         do {
-            let pageContents = try await makePageContents(fromLegacyPDFAt: sourceURL)
-            guard pageContents.contains(where: { $0.containsRecognizedText }) else {
+            guard let legacyDocument = PDFDocument(url: sourceURL), legacyDocument.pageCount > 0 else {
                 return false
             }
-
             return try await writeMasterPDF(
-                pageContents: pageContents,
+                pageCount: legacyDocument.pageCount,
+                loadPage: { index, includeOCR in
+                    guard let page = legacyDocument.page(at: index) else {
+                        throw DocumentStoreError.pdfCreationFailed
+                    }
+                    let raster = try SearchablePDFRenderer.renderUprightRaster(from: page)
+                    let lines = includeOCR ? await self.recognizeTextSafely(in: raster) : []
+                    return ScanPageContent(raster: raster, lines: lines)
+                },
                 destinationURL: sourceURL,
                 replacingExistingFile: true,
                 allowImageOnlyFallback: false
@@ -277,14 +288,15 @@ actor DocumentStore {
     }
 
     private func writeMasterPDF(
-        pageContents: [ScanPageContent],
+        pageCount: Int,
+        loadPage: (Int, Bool) async throws -> ScanPageContent,
         destinationURL: URL,
         replacingExistingFile: Bool,
         allowImageOnlyFallback: Bool,
         sensitiveTemporaryDirectory: URL? = nil
     ) async throws -> Bool {
+        guard pageCount > 0 else { throw DocumentStoreError.emptyScan }
         let temporaryURL = temporaryPDFURL(in: sensitiveTemporaryDirectory)
-        let imageOnlyPageContents = pageContents.map { $0.imageOnly }
 
         try fileManager.createDirectory(
             at: temporaryURL.deletingLastPathComponent(),
@@ -297,7 +309,12 @@ actor DocumentStore {
             }
         }
 
-        let renderResult = try searchablePDFRenderer.write(pages: pageContents, to: temporaryURL)
+        let renderResult = try await writePages(
+            count: pageCount,
+            to: temporaryURL,
+            includeOCR: true,
+            loadPage: loadPage
+        )
         let didVerifySearchablePDF = renderResult.containsEmbeddedText &&
             PDFSearchInspector.verifySearchableText(at: temporaryURL, expectedTokens: renderResult.searchableTokens)
 
@@ -314,17 +331,49 @@ actor DocumentStore {
             return false
         }
 
+        if !renderResult.containsEmbeddedText {
+            try movePDF(
+                from: temporaryURL,
+                to: destinationURL,
+                replacingExistingFile: replacingExistingFile
+            )
+            return false
+        }
+
         if fileManager.fileExists(atPath: temporaryURL.path) {
             try fileManager.removeItem(at: temporaryURL)
         }
 
-        _ = try searchablePDFRenderer.write(pages: imageOnlyPageContents, to: temporaryURL)
+        _ = try await writePages(
+            count: pageCount,
+            to: temporaryURL,
+            includeOCR: false,
+            loadPage: loadPage
+        )
         try movePDF(
             from: temporaryURL,
             to: destinationURL,
             replacingExistingFile: replacingExistingFile
         )
         return false
+    }
+
+    private func writePages(
+        count: Int,
+        to url: URL,
+        includeOCR: Bool,
+        loadPage: (Int, Bool) async throws -> ScanPageContent
+    ) async throws -> SearchablePDFRenderResult {
+        try Task.checkCancellation()
+        let firstPage = try await loadPage(0, includeOCR)
+        let writer = try SearchablePDFRenderer.Writer(url: url, firstPageRect: firstPage.pageRect)
+        writer.append(firstPage)
+        for index in 1..<count {
+            try Task.checkCancellation()
+            let page = try await loadPage(index, includeOCR)
+            writer.append(page)
+        }
+        return writer.finish()
     }
 
     private func movePDF(from sourceURL: URL, to destinationURL: URL, replacingExistingFile: Bool) throws {
@@ -338,43 +387,6 @@ actor DocumentStore {
         }
 
         try fileManager.moveItem(at: sourceURL, to: destinationURL)
-    }
-
-    private func makePageContents(from pages: [UIImage]) async throws -> [ScanPageContent] {
-        var pageContents: [ScanPageContent] = []
-        pageContents.reserveCapacity(pages.count)
-
-        for page in pages {
-            try Task.checkCancellation()
-            let raster = try ScanPageRasterizer.makeUprightRaster(from: page)
-            let recognizedLines = await recognizeTextSafely(in: raster)
-            pageContents.append(ScanPageContent(raster: raster, lines: recognizedLines))
-        }
-
-        return pageContents
-    }
-
-    private func makePageContents(fromLegacyPDFAt url: URL) async throws -> [ScanPageContent] {
-        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
-            throw DocumentStoreError.pdfCreationFailed
-        }
-
-        var pageContents: [ScanPageContent] = []
-        pageContents.reserveCapacity(document.pageCount)
-
-        for pageIndex in 0..<document.pageCount {
-            try Task.checkCancellation()
-
-            guard let page = document.page(at: pageIndex) else {
-                throw DocumentStoreError.pdfCreationFailed
-            }
-
-            let raster = try SearchablePDFRenderer.renderUprightRaster(from: page)
-            let recognizedLines = await recognizeTextSafely(in: raster)
-            pageContents.append(ScanPageContent(raster: raster, lines: recognizedLines))
-        }
-
-        return pageContents
     }
 
     private func recognizeTextSafely(in raster: ScanPageRaster) async -> [RecognizedTextLine] {

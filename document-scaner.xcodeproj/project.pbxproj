@@ -6,7 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1B54BEEF6430B93431D2928 /* DocumentHeroTransitionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC62A184AE2650289B3A84A /* DocumentHeroTransitionUITests.swift */; };
+		C92E06CA1FB3466D889CC101 /* DocumentPerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C92E06CA1FB3466D889CC102 /* DocumentPerformanceUITests.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		1F6C061A6C6F069D5D523465 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 615516852F5C963900C877D8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6155168C2F5C963900C877D8;
+			remoteInfo = "document-scaner";
+		};
 		A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 615516852F5C963900C877D8 /* Project object */;
@@ -18,20 +30,27 @@
 
 /* Begin PBXFileReference section */
 		6155168D2F5C963900C877D8 /* DocScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DocScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6CC62A184AE2650289B3A84A /* DocumentHeroTransitionUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentHeroTransitionUITests.swift; sourceTree = "<group>"; };
 		A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "document-scanerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1C2D3E42F5C963900C877D8 /* StoreKit.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = StoreKit.xcconfig; sourceTree = "<group>"; };
 		B1C2D3E52F5C963900C877D8 /* LocalOverrides.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalOverrides.xcconfig.example; sourceTree = "<group>"; };
 		B1C2D3E62F5C963900C877D8 /* DocScanner.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = DocScanner.storekit; sourceTree = "<group>"; };
+		C92E06CA1FB3466D889CC102 /* DocumentPerformanceUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentPerformanceUITests.swift; sourceTree = "<group>"; };
+		E70E7C82B43B424E7C25B1FC /* document-scanerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "document-scanerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6155168F2F5C963900C877D8 /* document-scaner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "document-scaner";
 			sourceTree = "<group>";
 		};
 		A1B2C3D52F5C963900C877D8 /* document-scanerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = "document-scanerTests";
 			sourceTree = "<group>";
 		};
@@ -39,6 +58,13 @@
 
 /* Begin PBXFrameworksBuildPhase section */
 		6155168A2F5C963900C877D8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73949DEB410DC2480FCEE158 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -55,6 +81,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0E2092021A8C110CAB45DBBB /* document-scanerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				6CC62A184AE2650289B3A84A /* DocumentHeroTransitionUITests.swift */,
+				C92E06CA1FB3466D889CC102 /* DocumentPerformanceUITests.swift */,
+			);
+			name = "document-scanerUITests";
+			path = "document-scanerUITests";
+			sourceTree = "<group>";
+		};
 		615516842F5C963900C877D8 = {
 			isa = PBXGroup;
 			children = (
@@ -62,6 +98,7 @@
 				6155168F2F5C963900C877D8 /* document-scaner */,
 				A1B2C3D52F5C963900C877D8 /* document-scanerTests */,
 				6155168E2F5C963900C877D8 /* Products */,
+				0E2092021A8C110CAB45DBBB /* document-scanerUITests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -70,6 +107,7 @@
 			children = (
 				6155168D2F5C963900C877D8 /* DocScanner.app */,
 				A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */,
+				E70E7C82B43B424E7C25B1FC /* document-scanerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -103,8 +141,6 @@
 				6155168F2F5C963900C877D8 /* document-scaner */,
 			);
 			name = "document-scaner";
-			packageProductDependencies = (
-			);
 			productName = "document-scaner";
 			productReference = 6155168D2F5C963900C877D8 /* DocScanner.app */;
 			productType = "com.apple.product-type.application";
@@ -126,11 +162,27 @@
 				A1B2C3D52F5C963900C877D8 /* document-scanerTests */,
 			);
 			name = "document-scanerTests";
-			packageProductDependencies = (
-			);
 			productName = "document-scanerTests";
 			productReference = A1B2C3D42F5C963900C877D8 /* document-scanerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B556B93C29459926BE0D9738 /* document-scanerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CCA81CA613DA42AECA0BC152 /* Build configuration list for PBXNativeTarget "document-scanerUITests" */;
+			buildPhases = (
+				3150E052DCACF4E1A3B3F2F5 /* Sources */,
+				73949DEB410DC2480FCEE158 /* Frameworks */,
+				0659832863D45EF2677E5730 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A596AA620CFBC63D973E9325 /* PBXTargetDependency */,
+			);
+			name = "document-scanerUITests";
+			productName = "document-scanerUITests";
+			productReference = E70E7C82B43B424E7C25B1FC /* document-scanerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -172,11 +224,19 @@
 			targets = (
 				6155168C2F5C963900C877D8 /* document-scaner */,
 				A1B2C3D72F5C963900C877D8 /* document-scanerTests */,
+				B556B93C29459926BE0D9738 /* document-scanerUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0659832863D45EF2677E5730 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6155168B2F5C963900C877D8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -194,6 +254,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3150E052DCACF4E1A3B3F2F5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B54BEEF6430B93431D2928 /* DocumentHeroTransitionUITests.swift in Sources */,
+				C92E06CA1FB3466D889CC101 /* DocumentPerformanceUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		615516892F5C963900C877D8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -215,6 +284,12 @@
 			isa = PBXTargetDependency;
 			target = 6155168C2F5C963900C877D8 /* document-scaner */;
 			targetProxy = A1B2C3DC2F5C963900C877D8 /* PBXContainerItemProxy */;
+		};
+		A596AA620CFBC63D973E9325 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "document-scaner";
+			target = 6155168C2F5C963900C877D8 /* document-scaner */;
+			targetProxy = 1F6C061A6C6F069D5D523465 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -344,6 +419,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				DOCSCANNER_APP_BUNDLE_ID = "tn.document-scaner.app";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -353,7 +429,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				MARKETING_VERSION = 2.0.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DOCSCANNER_APP_BUNDLE_ID)";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -377,6 +453,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				DOCSCANNER_APP_BUNDLE_ID = "tn.document-scaner.app";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -386,7 +463,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				MARKETING_VERSION = 2.0.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.app";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DOCSCANNER_APP_BUNDLE_ID)";
 				PRODUCT_NAME = DocScanner;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -454,6 +531,43 @@
 			};
 			name = Release;
 		};
+		D818072B7858E85D74FEE055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.appUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "document-scaner";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		EB7A5CBDA3E101E95B27BC13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 5S4ZT4SRV9;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tn.document-scaner.appUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "document-scaner";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -480,6 +594,15 @@
 			buildConfigurations = (
 				A1B2C3DA2F5C963900C877D8 /* Debug */,
 				A1B2C3DB2F5C963900C877D8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CCA81CA613DA42AECA0BC152 /* Build configuration list for PBXNativeTarget "document-scanerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D818072B7858E85D74FEE055 /* Release */,
+				EB7A5CBDA3E101E95B27BC13 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

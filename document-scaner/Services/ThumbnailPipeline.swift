@@ -15,7 +15,10 @@ actor ThumbnailPipeline {
     func image(for url: URL, pointSize: CGSize, scale: CGFloat) async -> UIImage? {
         let request = Self.cacheRequest(for: url, pointSize: pointSize, scale: scale)
 
-        if let cached = cache.image(forKey: request.key) { return cached }
+        if let cached = cache.image(forKey: request.key) {
+            cache.rememberPreview(cached, for: url)
+            return cached
+        }
 
         let task: Task<UIImage?, Never>
         if let existing = requests[request.key] {
@@ -34,13 +37,21 @@ actor ThumbnailPipeline {
 
         let pixelsWide = image.cgImage?.width ?? request.maximumPixelSize
         let pixelsHigh = image.cgImage?.height ?? request.maximumPixelSize
-        cache.insert(image, forKey: request.key, cost: pixelsWide * pixelsHigh * 4)
+        let cost = pixelsWide * pixelsHigh * 4
+        cache.insert(image, forKey: request.key, cost: cost)
+        cache.insertPreview(image, for: url, cost: cost)
         return image
     }
 
     nonisolated func cachedImage(for url: URL, pointSize: CGSize, scale: CGFloat) -> UIImage? {
         let request = Self.cacheRequest(for: url, pointSize: pointSize, scale: scale)
-        return cache.image(forKey: request.key)
+        let image = cache.image(forKey: request.key)
+        if let image { cache.rememberPreview(image, for: url) }
+        return image
+    }
+
+    nonisolated func cachedPreviewImage(for url: URL) -> UIImage? {
+        cache.previewImage(for: url)
     }
 
     func clearCache() {
@@ -88,9 +99,11 @@ nonisolated private struct ThumbnailCacheRequest: Sendable {
 /// the actor continues to own request coalescing and image decoding.
 nonisolated private final class ThumbnailMemoryCache: @unchecked Sendable {
     private let storage = NSCache<NSString, UIImage>()
+    private let previews = NSCache<NSString, UIImage>()
 
     init(costLimit: Int) {
         storage.totalCostLimit = costLimit
+        previews.totalCostLimit = min(costLimit, 16 * 1_024 * 1_024)
     }
 
     func image(forKey key: String) -> UIImage? {
@@ -101,7 +114,22 @@ nonisolated private final class ThumbnailMemoryCache: @unchecked Sendable {
         storage.setObject(image, forKey: key as NSString, cost: cost)
     }
 
+    func previewImage(for url: URL) -> UIImage? {
+        previews.object(forKey: url.standardizedFileURL.path as NSString)
+    }
+
+    func insertPreview(_ image: UIImage, for url: URL, cost: Int) {
+        previews.setObject(image, forKey: url.standardizedFileURL.path as NSString, cost: cost)
+    }
+
+    func rememberPreview(_ image: UIImage, for url: URL) {
+        guard previewImage(for: url) == nil else { return }
+        let cost = (image.cgImage?.bytesPerRow ?? 0) * (image.cgImage?.height ?? 0)
+        insertPreview(image, for: url, cost: cost)
+    }
+
     func removeAll() {
         storage.removeAllObjects()
+        previews.removeAllObjects()
     }
 }

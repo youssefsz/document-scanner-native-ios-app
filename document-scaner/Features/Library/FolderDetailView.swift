@@ -21,6 +21,7 @@ struct FolderDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedDocument: ScannedDocument?
+    @Namespace private var documentHeroNamespace
     @State private var showsRename = false
     @State private var showsDelete = false
     @State private var isDeleting = false
@@ -69,16 +70,19 @@ struct FolderDetailView: View {
                 } else {
                     LazyVGrid(columns: folderColumns, spacing: 16) {
                         ForEach(documents) { document in
-                            DocumentCard(
+                            LibraryDocumentTile(
                                 document: document,
+                                cardWidth: nil,
                                 isSelectionMode: isSelectionMode,
-                                isSelected: selectedDocumentIDs.contains(document.id)
+                                isSelected: selectedDocumentIDs.contains(document.id),
+                                onTap: { handleTap(document) },
+                                onLongPress: { beginSelection(document) }
                             )
-                                .frame(height: DocumentCardLayout.totalCardHeight)
-                                .onTapGesture { handleTap(document) }
-                                .onLongPressGesture(minimumDuration: 0.35) { beginSelection(document) }
-                                .accessibilityElement(children: .combine)
-                                .accessibilityAddTraits(.isButton)
+                                .documentHeroSource(
+                                    id: document.id,
+                                    in: documentHeroNamespace,
+                                    enabled: !accessibilityReduceMotion
+                                )
                         }
                     }
                     .padding(16)
@@ -162,7 +166,13 @@ struct FolderDetailView: View {
         }
         .onChange(of: library.allDocuments) { _ in reloadToken = UUID() }
         .fullScreenCover(item: $selectedDocument) { document in
-            DocumentDetailView(document: document).environmentObject(library)
+            DocumentDetailView(document: document)
+                .environmentObject(library)
+                .documentHeroDestination(
+                    id: document.id,
+                    in: documentHeroNamespace,
+                    reduceMotion: accessibilityReduceMotion
+                )
         }
         .documentPhotoImporter(
             isPresented: $isPhotoImporterPresented,

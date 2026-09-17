@@ -39,6 +39,7 @@ struct LibraryView: View {
     @State private var pendingScanTitle = ""
     @State private var selectedDocument: ScannedDocument?
     @State private var selectedDocumentIDs: Set<ScannedDocument.ID> = []
+    @Namespace private var documentHeroNamespace
 
     private let gridSpacing: CGFloat = 16
     private let horizontalPadding: CGFloat = 16
@@ -244,6 +245,11 @@ struct LibraryView: View {
         .fullScreenCover(item: $selectedDocument) { document in
             DocumentDetailView(document: document)
                 .environmentObject(library)
+                .documentHeroDestination(
+                    id: document.id,
+                    in: documentHeroNamespace,
+                    reduceMotion: accessibilityReduceMotion
+                )
         }
         .alert("Something Went Wrong", isPresented: activeErrorBinding) {
             Button("OK", role: .cancel) {
@@ -347,6 +353,11 @@ struct LibraryView: View {
                         onTap: { handlePrimaryAction(for: document) },
                         onLongPress: { handleLongPress(on: document) }
                     )
+                    .documentHeroSource(
+                        id: document.id,
+                        in: documentHeroNamespace,
+                        enabled: !accessibilityReduceMotion
+                    )
                 }
             }
             .padding(.horizontal, horizontalPadding)
@@ -378,7 +389,12 @@ struct LibraryView: View {
                         ForEach(library.documents) { document in
                             DocumentCard(document: document)
                                 .frame(height: DocumentCardLayout.totalCardHeight)
-                                .onTapGesture { selectedDocument = document }
+                                .documentHeroSource(
+                                    id: document.id,
+                                    in: documentHeroNamespace,
+                                    enabled: !accessibilityReduceMotion
+                                )
+                                .onTapGesture { presentDocument(document) }
                                 .accessibilityElement(children: .combine)
                                 .accessibilityAddTraits(.isButton)
                         }
@@ -428,6 +444,7 @@ struct LibraryView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("folder-card-\(summary.id.uuidString)")
                     .disabled(authenticatingFolderID != nil)
                     .contextMenu {
                         Button {
@@ -568,6 +585,7 @@ struct LibraryView: View {
             .pickerStyle(.segmented)
             .frame(width: 220)
             .accessibilityLabel("Library or Folders")
+            .accessibilityIdentifier("library-section-picker")
         } else {
             Text("Documents")
                 .font(.headline.weight(.semibold))
@@ -859,8 +877,12 @@ struct LibraryView: View {
         if isSelectionMode {
             toggleSelection(for: document)
         } else {
-            selectedDocument = document
+            presentDocument(document)
         }
+    }
+
+    private func presentDocument(_ document: ScannedDocument) {
+        selectedDocument = document
     }
 
     private func handleLongPress(on document: ScannedDocument) {
