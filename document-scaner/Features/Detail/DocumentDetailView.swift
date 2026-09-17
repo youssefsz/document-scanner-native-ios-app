@@ -18,7 +18,7 @@ struct DocumentDetailView: View {
         self.document = document
         self.secureAccess = secureAccess
         let preview = document.isSecure ? nil : ThumbnailPipeline.shared.cachedPreviewImage(for: document.previewURL)
-        _renderedPages = State(initialValue: preview.map { [DocumentPageSnapshot(id: 0, image: $0, isPreview: true)] } ?? [])
+        _renderedPages = State(initialValue: preview.map { [0: DocumentPageSnapshot(id: 0, image: $0, isPreview: true)] } ?? [:])
         _isLoadingPreview = State(initialValue: preview == nil)
         _secureTitleOverride = State(initialValue: document.isSecure ? document.title : nil)
     }
@@ -32,6 +32,10 @@ struct DocumentDetailView: View {
     @EnvironmentObject private var proStore: ProStore
 
     @State private var currentPageID: Int?
+    @State private var pageCount = 0
+    @State private var pageSession: DocumentPageSession?
+    @State private var pageLoadTasks: [Int: Task<Void, Never>] = [:]
+    @State private var pageLoadTokens: [Int: UUID] = [:]
     @State private var isDeleting = false
     @State private var isLoadingPreview = true
     @State private var isPreparingShare = false
@@ -43,13 +47,14 @@ struct DocumentDetailView: View {
     @State private var exportPreviewErrors: [DocumentExportQuality: String] = [:]
     @State private var exportPreviewLoadingQualities: Set<DocumentExportQuality> = []
     @State private var exportPreparationTasks: [DocumentExportQuality: Task<Void, Never>] = [:]
+    @State private var exportPreviewTokens: [DocumentExportQuality: UUID] = [:]
     @State private var exportPasswords: PDFPasswordPair?
     @State private var isExportPasswordRevealed = false
     @State private var pendingShareQuality: DocumentExportQuality?
     @State private var pendingSharePresentation = false
     @State private var preparedExports: [DocumentExportQuality: PreparedDocumentExport] = [:]
     @State private var previewErrorMessage: String?
-    @State private var renderedPages: [DocumentPageSnapshot] = []
+    @State private var renderedPages: [Int: DocumentPageSnapshot] = [:]
     @State private var requiresExportPassword = false
     @State private var selectedExportQuality = DocumentExportQuality.high
     @State private var shareItems: [Any] = []
@@ -82,6 +87,10 @@ struct DocumentDetailView: View {
         .task(id: document.id) {
             await loadPages()
             await requestNativeReviewIfNeeded()
+        }
+        .onChange(of: currentPageID) { pageID in
+            guard let pageID else { return }
+            loadVisiblePages(around: pageID)
         }
         .confirmationDialog("Delete this document?", isPresented: $isShowingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Document", role: .destructive) {
@@ -140,12 +149,24 @@ struct DocumentDetailView: View {
             )
         }
         .onDisappear {
+            cancelPageLoads()
+            pageSession = nil
             guard !isShowingShareSheet, !pendingSharePresentation else { return }
             cleanupPreparedExports()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            guard let pageSession else { return }
+            let retained = Set([currentPageID ?? 0])
+            for index in Array(renderedPages.keys) where !retained.contains(index) {
+                renderedPages.removeValue(forKey: index)
+            }
+            Task { await pageSession.removeCachedPages(except: retained) }
+        }
         .onChange(of: scenePhase) { phase in
             guard currentDocument.isSecure, phase != .active else { return }
-            renderedPages = []
+            cancelPageLoads()
+            pageSession = nil
+            renderedPages = [:]
             shareItems = []
             dismiss()
         }
@@ -158,7 +179,7 @@ struct DocumentDetailView: View {
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
-        } else if renderedPages.isEmpty {
+        } else if renderedPages.isEmpty && pageCount == 0 {
             AppUnavailableStateView(
                 title: "Preview Unavailable",
                 systemImage: "doc.text.magnifyingglass",
@@ -178,7 +199,8 @@ struct DocumentDetailView: View {
 
     private var pagedViewer: some View {
         DocumentPagePagerView(
-            pages: renderedPages,
+            pageCount: max(pageCount, renderedPages.isEmpty ? 0 : 1),
+            snapshots: renderedPages,
             currentPageID: $currentPageID,
             onSingleTap: toggleControls,
             onZoomStateChange: handleZoomStateChange
@@ -263,7 +285,7 @@ struct DocumentDetailView: View {
     private var bottomBar: some View {
         VStack(spacing: 14) {
             if !renderedPages.isEmpty {
-                Text("Page \(currentPageNumber) of \(currentDocument.pageCount)")
+                Text("Page \(currentPageNumber) of \(max(pageCount, currentDocument.pageCount))")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -281,6 +303,8 @@ struct DocumentDetailView: View {
                     action: startShare
                 )
                 .disabled(renderedPages.isEmpty || isDeleting || isRenaming)
+                .accessibilityLabel("Share document")
+                .accessibilityIdentifier("document-viewer-share")
 
                 Spacer()
 
@@ -413,7 +437,7 @@ struct DocumentDetailView: View {
     private func loadPages() async {
         isLoadingPreview = renderedPages.isEmpty
         previewErrorMessage = nil
-        currentPageID = renderedPages.first?.id
+        currentPageID = renderedPages[0] == nil ? nil : 0
         showsControls = true
         zoomedPageID = nil
 
@@ -430,7 +454,7 @@ struct DocumentDetailView: View {
                     sessionID: secureAccess.sessionID
                    ) {
                     guard !Task.isCancelled else { return }
-                    renderedPages = [DocumentPageSnapshot(id: 0, image: preview, isPreview: true)]
+                    renderedPages[0] = DocumentPageSnapshot(id: 0, image: preview, isPreview: true)
                     currentPageID = 0
                     isLoadingPreview = false
                 }
@@ -450,25 +474,16 @@ struct DocumentDetailView: View {
         }
 
         do {
-            for try await page in DocumentPageLoader.pages(from: source) {
-                guard !Task.isCancelled else { return }
-                if renderedPages.first?.isPreview == true, page.id == 0 {
-                    renderedPages[0] = page
-                } else {
-                    if renderedPages.first?.isPreview == true {
-                        renderedPages = []
-                    }
-                    renderedPages.append(page)
-                }
-                if renderedPages.count == 1 {
-                    currentPageID = page.id
-                    isLoadingPreview = false
-                }
-            }
+            let session = try await DocumentPageSession.open(from: source)
             guard !Task.isCancelled else { return }
-            if renderedPages.allSatisfy(\.isPreview) {
-                showPreviewError("The PDF loaded, but no pages could be rendered.")
-            }
+            pageSession = session
+            pageCount = session.pageCount
+            let firstPage = try await session.page(at: 0)
+            guard !Task.isCancelled else { return }
+            renderedPages[0] = firstPage
+            currentPageID = currentPageID ?? 0
+            isLoadingPreview = false
+            loadVisiblePages(around: currentPageID ?? 0)
         } catch {
             guard !Task.isCancelled else { return }
             showPreviewError(error.localizedDescription)
@@ -476,11 +491,50 @@ struct DocumentDetailView: View {
     }
 
     private func showPreviewError(_ message: String) {
-        if renderedPages.allSatisfy(\.isPreview) {
-            renderedPages = []
+        pageCount = 0
+        if renderedPages.values.allSatisfy(\.isPreview) {
+            renderedPages = [:]
         }
         previewErrorMessage = message
         isLoadingPreview = false
+    }
+
+    private func loadVisiblePages(around center: Int) {
+        guard let pageSession, pageCount > 0 else { return }
+        let retained = Set(max(0, center - 2)...min(pageCount - 1, center + 2))
+        for index in Array(pageLoadTasks.keys) where !retained.contains(index) {
+            pageLoadTasks.removeValue(forKey: index)?.cancel()
+            pageLoadTokens.removeValue(forKey: index)
+        }
+        for index in Array(renderedPages.keys) where !retained.contains(index) {
+            renderedPages.removeValue(forKey: index)
+        }
+        for index in retained.sorted() where renderedPages[index] == nil && pageLoadTasks[index] == nil {
+            let token = UUID()
+            pageLoadTokens[index] = token
+            pageLoadTasks[index] = Task { @MainActor in
+                do {
+                    let page = try await pageSession.page(at: index)
+                    guard !Task.isCancelled, pageLoadTokens[index] == token else { return }
+                    renderedPages[index] = page
+                } catch is CancellationError {
+                    // A page outside the visible window no longer needs rendering.
+                } catch {
+                    guard pageLoadTokens[index] == token else { return }
+                    previewErrorMessage = error.localizedDescription
+                }
+                if pageLoadTokens[index] == token {
+                    pageLoadTasks.removeValue(forKey: index)
+                    pageLoadTokens.removeValue(forKey: index)
+                }
+            }
+        }
+    }
+
+    private func cancelPageLoads() {
+        pageLoadTasks.values.forEach { $0.cancel() }
+        pageLoadTasks = [:]
+        pageLoadTokens = [:]
     }
 
     private func handleZoomStateChange(for pageID: Int, isZoomed: Bool) {
@@ -520,11 +574,18 @@ struct DocumentDetailView: View {
         // Secure documents are prepared only by the authorized export path below.
         // The ordinary size-preview path reads a URL and must never see vault bytes.
         guard !currentDocument.isSecure else { return }
+        for otherQuality in Array(exportPreparationTasks.keys) where otherQuality != quality {
+            exportPreparationTasks.removeValue(forKey: otherQuality)?.cancel()
+            exportPreviewTokens.removeValue(forKey: otherQuality)
+            exportPreviewLoadingQualities.remove(otherQuality)
+        }
         guard preparedExports[quality] == nil else { return }
         guard !exportPreviewLoadingQualities.contains(quality) else { return }
 
         exportPreviewErrors[quality] = nil
         exportPreviewLoadingQualities.insert(quality)
+        let token = UUID()
+        exportPreviewTokens[quality] = token
         let documentToExport = currentDocument
 
         let task = Task {
@@ -532,22 +593,28 @@ struct DocumentDetailView: View {
                 let preparedExport = try await Self.exportService.prepareExport(for: documentToExport, quality: quality)
 
                 _ = await MainActor.run {
+                    guard exportPreviewTokens[quality] == token else { return }
                     exportPreviewLoadingQualities.remove(quality)
                     exportPreparationTasks.removeValue(forKey: quality)
+                    exportPreviewTokens.removeValue(forKey: quality)
                     exportPreviewErrors[quality] = nil
                     preparedExports[quality] = preparedExport
 
                 }
             } catch is CancellationError {
                 _ = await MainActor.run {
+                    guard exportPreviewTokens[quality] == token else { return }
                     exportPreviewLoadingQualities.remove(quality)
                     exportPreparationTasks.removeValue(forKey: quality)
+                    exportPreviewTokens.removeValue(forKey: quality)
 
                 }
             } catch {
                 _ = await MainActor.run {
+                    guard exportPreviewTokens[quality] == token else { return }
                     exportPreviewLoadingQualities.remove(quality)
                     exportPreparationTasks.removeValue(forKey: quality)
+                    exportPreviewTokens.removeValue(forKey: quality)
                     exportPreviewErrors[quality] = error.localizedDescription
 
                 }
@@ -574,9 +641,13 @@ struct DocumentDetailView: View {
             sourceProtection: documentToExport.protection
         )
         let proAccessGranted = proStore.hasAccess(to: .passwordProtectedPDF)
+        let existingPreparation = exportPreparationTasks[quality]
 
         Task {
             do {
+                if let existingPreparation {
+                    await existingPreparation.value
+                }
                 let authorizedSourceData: Data?
                 if documentToExport.isSecure {
                     guard let secureAccess else { throw LibraryRepositoryError.secureAccessRequired }
@@ -626,6 +697,7 @@ struct DocumentDetailView: View {
         let documentToCleanup = currentDocument
         exportPreparationTasks.values.forEach { $0.cancel() }
         exportPreparationTasks = [:]
+        exportPreviewTokens = [:]
         preparedExports = [:]
         exportPreviewErrors = [:]
         exportPreviewLoadingQualities = []
@@ -702,7 +774,7 @@ private struct ViewerControlButton: View {
     }
 }
 
-struct DocumentPageSnapshot: Identifiable, @unchecked Sendable {
+nonisolated struct DocumentPageSnapshot: Identifiable, @unchecked Sendable {
     let id: Int
     let image: UIImage
     var isPreview = false

@@ -8,7 +8,7 @@ import Foundation
 import PDFKit
 import UIKit
 
-struct PreparedDocumentExport: Sendable {
+nonisolated struct PreparedDocumentExport: Sendable {
     let quality: DocumentExportQuality
     let url: URL
     let fileSizeBytes: Int64
@@ -57,19 +57,19 @@ enum DocumentExportError: LocalizedError, Equatable {
 
 actor DocumentExportService {
     private let fileManager = FileManager.default
+    private let paths: StoragePaths
     private let store: DocumentStore
     private let ocrService: OCRService
-    private let searchablePDFRenderer: SearchablePDFRenderer
     private var cachedExports: [UUID: [DocumentExportQuality: PreparedDocumentExport]] = [:]
 
     init(
         store: DocumentStore = DocumentStore(),
-        ocrService: OCRService = OCRService(),
-        searchablePDFRenderer: SearchablePDFRenderer = SearchablePDFRenderer()
+        paths: StoragePaths = .production,
+        ocrService: OCRService = OCRService()
     ) {
         self.store = store
+        self.paths = paths
         self.ocrService = ocrService
-        self.searchablePDFRenderer = searchablePDFRenderer
     }
 
     func prepareExport(for document: ScannedDocument, quality: DocumentExportQuality) async throws -> PreparedDocumentExport {
@@ -135,7 +135,8 @@ actor DocumentExportService {
         quality: DocumentExportQuality
     ) async throws -> PreparedDocumentExport {
         _ = await store.ensureSearchablePDFIfNeeded(for: document)
-        let sourceURL = document.pdfURL
+        try Task.checkCancellation()
+        let sourceURL = document.pdfURL(in: paths)
 
         guard fileManager.fileExists(atPath: sourceURL.path) else {
             throw DocumentExportError.sourceFileMissing
@@ -147,6 +148,7 @@ actor DocumentExportService {
 
         let exportDirectoryURL = temporaryExportsDirectory
             .appendingPathComponent(document.id.uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
 
         try fileManager.createDirectory(
             at: exportDirectoryURL,
@@ -160,18 +162,24 @@ actor DocumentExportService {
             isDirectory: false
         )
 
-        try await writeExport(
-            quality: quality,
-            from: pdfDocument,
-            to: exportURL
-        )
-        let fileSize = try fileSizeBytes(for: exportURL)
-        return PreparedDocumentExport(
-            quality: quality,
-            url: exportURL,
-            fileSizeBytes: fileSize,
-            isPasswordProtected: false
-        )
+        do {
+            try await writeExport(
+                quality: quality,
+                from: pdfDocument,
+                to: exportURL
+            )
+            try Task.checkCancellation()
+            let fileSize = try fileSizeBytes(for: exportURL)
+            return PreparedDocumentExport(
+                quality: quality,
+                url: exportURL,
+                fileSizeBytes: fileSize,
+                isPasswordProtected: false
+            )
+        } catch {
+            try? fileManager.removeItem(at: exportDirectoryURL)
+            throw error
+        }
     }
 
     private func prepareUncachedSecureSourceExport(
@@ -188,14 +196,20 @@ actor DocumentExportService {
             attributes: [.protectionKey: FileProtectionType.complete]
         )
         let url = directory.appendingPathComponent(exportFilename(for: document, quality: quality))
-        try await writeExport(quality: quality, from: sourceDocument, to: url)
-        try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
-        return PreparedDocumentExport(
-            quality: quality,
-            url: url,
-            fileSizeBytes: try fileSizeBytes(for: url),
-            isPasswordProtected: false
-        )
+        do {
+            try await writeExport(quality: quality, from: sourceDocument, to: url)
+            try Task.checkCancellation()
+            try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+            return PreparedDocumentExport(
+                quality: quality,
+                url: url,
+                fileSizeBytes: try fileSizeBytes(for: url),
+                isPasswordProtected: false
+            )
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
+        }
     }
 
     private func passwordProtectedExport(
@@ -298,9 +312,9 @@ actor DocumentExportService {
                 throw DocumentExportError.exportCreationFailed
             }
         case .high, .medium, .low:
-            let pageContents = try await makePageContents(from: document, quality: quality)
             try await writeRenderedExport(
-                pageContents: pageContents,
+                from: document,
+                quality: quality,
                 to: exportURL,
                 variant: exportVariant(for: quality)
             )
@@ -308,7 +322,8 @@ actor DocumentExportService {
     }
 
     private func writeRenderedExport(
-        pageContents: [ScanPageContent],
+        from document: PDFDocument,
+        quality: DocumentExportQuality,
         to exportURL: URL,
         variant: ExportVariant
     ) async throws {
@@ -322,18 +337,25 @@ actor DocumentExportService {
             }
         }
 
-        let renderResult = try searchablePDFRenderer.write(pages: pageContents, to: temporaryRenderURL)
+        let renderResult = try await writeRenderedPages(
+            from: document,
+            quality: quality,
+            to: temporaryRenderURL,
+            includeOCR: true
+        )
         let didVerifySearchablePDF = renderResult.containsEmbeddedText &&
             PDFSearchInspector.verifySearchableText(at: temporaryRenderURL, expectedTokens: renderResult.searchableTokens)
 
-        if !didVerifySearchablePDF {
+        if !didVerifySearchablePDF && renderResult.containsEmbeddedText {
             if fileManager.fileExists(atPath: temporaryRenderURL.path) {
                 try fileManager.removeItem(at: temporaryRenderURL)
             }
 
-            _ = try searchablePDFRenderer.write(
-                pages: pageContents.map(\.imageOnly),
-                to: temporaryRenderURL
+            _ = try await writeRenderedPages(
+                from: document,
+                quality: quality,
+                to: temporaryRenderURL,
+                includeOCR: false
             )
         }
 
@@ -341,20 +363,20 @@ actor DocumentExportService {
             throw DocumentExportError.exportCreationFailed
         }
 
-        _ = try await makePDFData(
+        try writePDF(
             from: renderedDocument,
             variant: variant,
             destinationURL: exportURL
         )
     }
 
-    private func makePageContents(
+    private func writeRenderedPages(
         from document: PDFDocument,
-        quality: DocumentExportQuality
-    ) async throws -> [ScanPageContent] {
-        var pageContents: [ScanPageContent] = []
-        pageContents.reserveCapacity(document.pageCount)
-
+        quality: DocumentExportQuality,
+        to url: URL,
+        includeOCR: Bool
+    ) async throws -> SearchablePDFRenderResult {
+        var writer: SearchablePDFRenderer.Writer?
         for pageIndex in 0..<document.pageCount {
             try Task.checkCancellation()
 
@@ -371,28 +393,29 @@ actor DocumentExportService {
                 from: renderedRaster,
                 compressionQuality: quality.jpegCompressionQuality
             )
-            let recognizedLines = await recognizeTextSafely(
-                in: compressedRaster,
-                pageRect: targetPageRect.isEmpty ? compressedRaster.pageRect : targetPageRect
+            let pageRect = targetPageRect.isEmpty ? compressedRaster.pageRect : targetPageRect
+            let recognizedLines = includeOCR
+                ? await recognizeTextSafely(in: compressedRaster, pageRect: pageRect)
+                : []
+            let content = ScanPageContent(
+                raster: compressedRaster,
+                lines: recognizedLines,
+                pageRect: pageRect
             )
-
-            pageContents.append(
-                ScanPageContent(
-                    raster: compressedRaster,
-                    lines: recognizedLines,
-                    pageRect: targetPageRect.isEmpty ? compressedRaster.pageRect : targetPageRect
-                )
-            )
+            if writer == nil {
+                writer = try SearchablePDFRenderer.Writer(url: url, firstPageRect: pageRect)
+            }
+            writer?.append(content)
         }
-
-        return pageContents
+        guard let writer else { throw DocumentExportError.pageRenderFailed }
+        return writer.finish()
     }
 
-    private func makePDFData(
+    private func writePDF(
         from document: PDFDocument,
         variant: ExportVariant,
         destinationURL: URL
-    ) async throws -> Data {
+    ) throws {
         if fileManager.fileExists(atPath: destinationURL.path) {
             try fileManager.removeItem(at: destinationURL)
         }
@@ -401,12 +424,9 @@ actor DocumentExportService {
             throw DocumentExportError.exportCreationFailed
         }
 
-        let data = try Data(contentsOf: destinationURL)
-        guard !data.isEmpty else {
+        guard try fileSizeBytes(for: destinationURL) > 0 else {
             throw DocumentExportError.exportCreationFailed
         }
-
-        return data
     }
 
     private func recognizeTextSafely(in raster: ScanPageRaster, pageRect: CGRect) async -> [RecognizedTextLine] {

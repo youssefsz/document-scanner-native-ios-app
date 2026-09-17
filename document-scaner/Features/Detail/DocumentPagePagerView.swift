@@ -5,12 +5,12 @@
 //
 
 import AVFoundation
-import PDFKit
 import SwiftUI
 import UIKit
 
 struct DocumentPagePagerView: UIViewRepresentable {
-    let pages: [DocumentPageSnapshot]
+    let pageCount: Int
+    let snapshots: [Int: DocumentPageSnapshot]
     @Binding var currentPageID: Int?
     let onSingleTap: () -> Void
     let onZoomStateChange: (Int, Bool) -> Void
@@ -23,7 +23,8 @@ struct DocumentPagePagerView: UIViewRepresentable {
         let currentPageBinding = $currentPageID
 
         uiView.configure(
-            pages: pages,
+            pageCount: pageCount,
+            snapshots: snapshots,
             currentPageID: currentPageBinding.wrappedValue,
             onPageChange: { pageID in
                 currentPageBinding.wrappedValue = pageID
@@ -36,10 +37,9 @@ struct DocumentPagePagerView: UIViewRepresentable {
 
 final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
     private let scrollView = UIScrollView()
-    private let stackView = UIStackView()
-
-    private var pageViews: [DocumentPageHostView] = []
-    private var pageIDs: [Int] = []
+    private var pageViews: [Int: DocumentPageHostView] = [:]
+    private var snapshots: [Int: DocumentPageSnapshot] = [:]
+    private var pageCount = 0
     private var currentPageID: Int?
     private var zoomedPageID: Int?
     private var lastLayoutSize: CGSize = .zero
@@ -60,14 +60,16 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-
         guard bounds.size != .zero, bounds.size != lastLayoutSize else { return }
         lastLayoutSize = bounds.size
-        setCurrentPage(id: currentPageID ?? pageIDs.first, animated: false)
+        updateContentSize()
+        setCurrentPage(id: currentPageID ?? (pageCount > 0 ? 0 : nil), animated: false)
+        syncVisiblePageViews()
     }
 
     func configure(
-        pages: [DocumentPageSnapshot],
+        pageCount: Int,
+        snapshots: [Int: DocumentPageSnapshot],
         currentPageID: Int?,
         onPageChange: @escaping (Int) -> Void,
         onSingleTap: @escaping () -> Void,
@@ -76,10 +78,13 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         self.onPageChange = onPageChange
         self.onSingleTap = onSingleTap
         self.onZoomStateChange = onZoomStateChange
-
-        syncPageViews(with: pages)
-        let requestedPageID = currentPageID
-            .flatMap { pageIDs.contains($0) ? $0 : nil } ?? pageIDs.first
+        self.snapshots = snapshots
+        if self.pageCount != pageCount {
+            self.pageCount = pageCount
+            updateContentSize()
+        }
+        let requestedPageID = currentPageID.flatMap { (0..<pageCount).contains($0) ? $0 : nil }
+            ?? (pageCount > 0 ? 0 : nil)
 
         // A drag updates the SwiftUI binding, which immediately calls configure again.
         // Only reposition for a genuinely external page change; snapping here during
@@ -87,10 +92,12 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         if requestedPageID != self.currentPageID {
             setCurrentPage(id: requestedPageID, animated: false)
         }
-        scrollView.isScrollEnabled = pages.count > 1 && zoomedPageID == nil
+        syncVisiblePageViews()
+        scrollView.isScrollEnabled = pageCount > 1 && zoomedPageID == nil
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        syncVisiblePageViews()
         guard let pageID = nearestPageID() else { return }
         guard currentPageID != pageID else { return }
 
@@ -110,73 +117,57 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
         scrollView.backgroundColor = .black
         scrollView.contentInsetAdjustmentBehavior = .never
 
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.axis = .vertical
-        stackView.spacing = 0
-        stackView.alignment = .fill
-        stackView.distribution = .fill
-
         addSubview(scrollView)
-        scrollView.addSubview(stackView)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            stackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            stackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
         ])
     }
 
-    private func syncPageViews(with pages: [DocumentPageSnapshot]) {
-        let newPageIDs = pages.map(\.id)
+    private func updateContentSize() {
+        guard scrollView.bounds.height > 0 else { return }
+        scrollView.contentSize = CGSize(
+            width: scrollView.bounds.width,
+            height: scrollView.bounds.height * CGFloat(pageCount)
+        )
+    }
 
-        if pageIDs != newPageIDs {
-            if newPageIDs.starts(with: pageIDs) {
-                appendPageViews(count: newPageIDs.count - pageIDs.count)
-            } else {
-                rebuildPageViews(for: pages)
-            }
+    private func syncVisiblePageViews() {
+        guard pageCount > 0, scrollView.bounds.height > 0 else {
+            pageViews.values.forEach { $0.removeFromSuperview() }
+            pageViews = [:]
+            return
         }
-
-        for (pageView, page) in zip(pageViews, pages) {
+        let center = nearestPageID() ?? 0
+        let visibleIndices = Set(max(0, center - 2)...min(pageCount - 1, center + 2))
+        for index in Array(pageViews.keys) where !visibleIndices.contains(index) {
+            pageViews.removeValue(forKey: index)?.removeFromSuperview()
+        }
+        for index in visibleIndices.sorted() {
+            let pageView: DocumentPageHostView
+            if let existing = pageViews[index] {
+                pageView = existing
+            } else {
+                pageView = DocumentPageHostView()
+                pageViews[index] = pageView
+                scrollView.addSubview(pageView)
+            }
+            pageView.frame = CGRect(
+                x: 0,
+                y: CGFloat(index) * scrollView.bounds.height,
+                width: scrollView.bounds.width,
+                height: scrollView.bounds.height
+            )
             pageView.configure(
-                page: page,
+                page: snapshots[index],
                 onSingleTap: onSingleTap,
                 onZoomStateChange: { [weak self] isZoomed in
-                    self?.handleZoomStateChange(for: page.id, isZoomed: isZoomed)
+                    self?.handleZoomStateChange(for: index, isZoomed: isZoomed)
                 }
             )
-        }
-
-        if !newPageIDs.contains(zoomedPageID ?? -1) {
-            zoomedPageID = nil
-        }
-
-        pageIDs = newPageIDs
-    }
-
-    private func rebuildPageViews(for pages: [DocumentPageSnapshot]) {
-        for pageView in pageViews {
-            pageView.removeFromSuperview()
-        }
-
-        pageViews = []
-        appendPageViews(count: pages.count)
-    }
-
-    private func appendPageViews(count: Int) {
-        for _ in 0..<count {
-            let pageView = DocumentPageHostView()
-            pageView.translatesAutoresizingMaskIntoConstraints = false
-            stackView.addArrangedSubview(pageView)
-            pageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor).isActive = true
-            pageViews.append(pageView)
         }
     }
 
@@ -187,26 +178,25 @@ final class DocumentPagePagingView: UIView, UIScrollViewDelegate {
             zoomedPageID = nil
         }
 
-        scrollView.isScrollEnabled = pageIDs.count > 1 && zoomedPageID == nil
+        scrollView.isScrollEnabled = pageCount > 1 && zoomedPageID == nil
         onZoomStateChange(pageID, isZoomed)
     }
 
     private func setCurrentPage(id: Int?, animated: Bool) {
-        guard let id, let index = pageIDs.firstIndex(of: id), scrollView.bounds.height > 0 else { return }
+        guard let id, (0..<pageCount).contains(id), scrollView.bounds.height > 0 else { return }
 
         currentPageID = id
-        let targetOffset = CGPoint(x: 0, y: scrollView.bounds.height * CGFloat(index))
+        let targetOffset = CGPoint(x: 0, y: scrollView.bounds.height * CGFloat(id))
 
         guard scrollView.contentOffset != targetOffset else { return }
         scrollView.setContentOffset(targetOffset, animated: animated)
     }
 
     private func nearestPageID() -> Int? {
-        guard !pageIDs.isEmpty, scrollView.bounds.height > 0 else { return nil }
+        guard pageCount > 0, scrollView.bounds.height > 0 else { return nil }
 
         let rawIndex = Int(round(scrollView.contentOffset.y / scrollView.bounds.height))
-        let clampedIndex = min(max(rawIndex, 0), pageIDs.count - 1)
-        return pageIDs[clampedIndex]
+        return min(max(rawIndex, 0), pageCount - 1)
     }
 }
 
@@ -230,13 +220,13 @@ private final class DocumentPageHostView: UIView {
     }
 
     func configure(
-        page: DocumentPageSnapshot,
+        page: DocumentPageSnapshot?,
         onSingleTap: @escaping () -> Void,
         onZoomStateChange: @escaping (Bool) -> Void
     ) {
         pageView.configure(
-            image: page.image,
-            isPreview: page.isPreview,
+            image: page?.image,
+            isPreview: page?.isPreview ?? false,
             pageInsets: UIEdgeInsets(top: 28, left: 20, bottom: 28, right: 20),
             onSingleTap: onSingleTap,
             onZoomStateChange: onZoomStateChange
@@ -293,7 +283,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
     }
 
     func configure(
-        image: UIImage,
+        image: UIImage?,
         isPreview: Bool,
         pageInsets: UIEdgeInsets,
         onSingleTap: @escaping () -> Void,
@@ -302,7 +292,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
         self.onSingleTap = onSingleTap
         self.onZoomStateChange = onZoomStateChange
 
-        let identifier = ObjectIdentifier(image)
+        let identifier = image.map(ObjectIdentifier.init)
         var needsLayoutUpdate = false
 
         if self.pageInsets != pageInsets {
@@ -314,7 +304,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
             let isReplacingPreview = currentImageIsPreview && !isPreview && imageView.image != nil
             currentImageIdentifier = identifier
             currentImageIsPreview = isPreview
-            if isReplacingPreview {
+            if isReplacingPreview, let image {
                 UIView.transition(with: imageView, duration: 0.2, options: .transitionCrossDissolve) {
                     self.imageView.image = image
                 }
@@ -322,7 +312,7 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
                 imageView.image = image
                 isZoomed = false
                 scrollView.panGestureRecognizer.isEnabled = false
-                needsInitialPositioning = true
+                needsInitialPositioning = image != nil
                 pageCanvasView.isHidden = true
             }
             needsLayoutUpdate = true
@@ -509,74 +499,5 @@ private final class ZoomablePageContainerView: UIView, UIScrollViewDelegate {
     @objc
     private func handleSingleTap() {
         onSingleTap?()
-    }
-}
-
-nonisolated enum DocumentPageSource: Sendable {
-    case url(URL)
-    case data(Data)
-}
-
-nonisolated enum DocumentPageLoadError: LocalizedError {
-    case unreadable
-
-    var errorDescription: String? {
-        "The PDF file exists, but the app could not read it."
-    }
-}
-
-nonisolated enum DocumentPageLoader {
-    static func pages(from source: DocumentPageSource) -> AsyncThrowingStream<DocumentPageSnapshot, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task.detached(priority: .userInitiated) {
-                let document: PDFDocument?
-                switch source {
-                case .url(let url):
-                    document = PDFDocument(url: url)
-                case .data(let data):
-                    document = PDFDocument(data: data)
-                }
-
-                guard let document, document.pageCount > 0 else {
-                    continuation.finish(throwing: DocumentPageLoadError.unreadable)
-                    return
-                }
-
-                for index in 0..<document.pageCount {
-                    guard !Task.isCancelled else { break }
-                    guard let page = document.page(at: index) else { continue }
-                    let snapshot = DocumentPageSnapshot(id: index, image: DocumentPageRenderer.render(page: page))
-                    continuation.yield(snapshot)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    }
-}
-
-nonisolated enum DocumentPageRenderer {
-    static func render(page: PDFPage) -> UIImage {
-        let bounds = page.bounds(for: .mediaBox)
-        let fallbackSize = CGSize(width: 1200, height: 1600)
-        let pageSize = bounds.isEmpty ? fallbackSize : bounds.size
-        let maxDimension: CGFloat = 2200
-        let scale = maxDimension / max(pageSize.width, pageSize.height)
-        let renderSize = CGSize(width: pageSize.width * scale, height: pageSize.height * scale)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.opaque = true
-        format.scale = 1
-
-        return UIGraphicsImageRenderer(size: renderSize, format: format).image { context in
-            UIColor.white.setFill()
-            context.fill(CGRect(origin: .zero, size: renderSize))
-
-            let cgContext = context.cgContext
-            cgContext.saveGState()
-            cgContext.translateBy(x: 0, y: renderSize.height)
-            cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: cgContext)
-            cgContext.restoreGState()
-        }
     }
 }

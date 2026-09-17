@@ -3,7 +3,10 @@ import XCTest
 final class DocumentHeroTransitionUITests: XCTestCase {
     func testDocumentOpensAndClosesFromLibrary() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("-documentPerformanceFixture")
         app.launch()
+        dismissSystemSignInIfPresent()
+        app.activate()
 
         let documentCards = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "document-card-"))
@@ -49,7 +52,10 @@ final class DocumentHeroTransitionUITests: XCTestCase {
 
     func testDocumentOpensAndClosesFromOrdinaryFolder() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("-documentPerformanceFixture")
         app.launch()
+        dismissSystemSignInIfPresent()
+        app.activate()
         let librarySections = app.segmentedControls["library-section-picker"]
         XCTAssertTrue(librarySections.waitForExistence(timeout: 10))
         librarySections.buttons["Folders"].tap()

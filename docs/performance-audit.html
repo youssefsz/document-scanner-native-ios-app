@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Document performance review · DocScanner</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17202a; background: #f8f9f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 920px; margin: auto; padding: 64px 28px 96px; }
+    .eyebrow { color: #496052; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 17px 0 18px; font-size: clamp(38px, 6vw, 68px); line-height: 1.03; letter-spacing: -.055em; font-weight: 680; }
+    .lede { max-width: 670px; margin: 0; color: #4e5a55; font-size: 20px; line-height: 1.55; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 28px; color: #67716c; font-size: 13px; }
+    .rule { border: 0; border-top: 1px solid #dce2dc; margin: 47px 0; }
+    section { margin-top: 44px; }
+    h2 { font-size: 24px; letter-spacing: -.025em; margin: 0 0 15px; }
+    h3 { font-size: 15px; margin: 0 0 7px; }
+    p { line-height: 1.68; margin: 0 0 16px; color: #4e5a55; }
+    strong { color: #17202a; }
+    .statline { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px 16px; margin: 21px 0 13px; }
+    .statline .old { color: #748078; font-size: 25px; letter-spacing: -.03em; }
+    .statline .arrow { color: #9aa59c; font-size: 21px; }
+    .statline .new { color: #14634c; font-size: 43px; font-weight: 700; letter-spacing: -.055em; }
+    .statline .change { color: #14634c; font-size: 14px; font-weight: 700; }
+    .bar { height: 10px; border-radius: 9px; background: #e5eae5; overflow: hidden; max-width: 640px; }
+    .bar span { display: block; width: 95.4%; height: 100%; background: #246c54; border-radius: inherit; }
+    .caption { font-size: 13px; color: #6f7973; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { color: #66726b; font-size: 12px; text-align: left; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+    th, td { padding: 15px 12px 15px 0; border-bottom: 1px solid #dfe5df; vertical-align: top; }
+    td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { white-space: nowrap; }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 46px; margin-top: 20px; }
+    .columns article { border-top: 1px solid #dfe5df; padding-top: 17px; }
+    .status { display: inline-block; margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #14634c; }
+    .status.limited { color: #8c6020; }
+    ul { padding-left: 19px; color: #4e5a55; line-height: 1.7; }
+    li { margin: 6px 0; }
+    a { color: #14634c; text-underline-offset: 3px; }
+    code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #355646; word-break: break-word; }
+    footer { border-top: 1px solid #dce2dc; margin-top: 52px; padding-top: 20px; color: #6f7973; font-size: 12px; line-height: 1.6; }
+    @media (max-width: 650px) { main { padding: 38px 20px 68px; } .columns { grid-template-columns: 1fr; gap: 17px; } table { font-size: 13px; } th, td { padding-right: 8px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">DocScanner / engineering review</div>
+    <h1>Document performance, measured.</h1>
+    <p class="lede">A focused update to the document viewer and PDF pipeline, measured on a real iPhone with disposable test documents.</p>
+    <div class="meta"><span>16 September 2026</span><span>iPhone 15 · iOS 27.0</span><span>Branch: feat/document-hero-performance</span></div>
+  </header>
+
+  <hr class="rule">
+
+  <section aria-labelledby="result-title">
+    <div class="eyebrow">01 / measured result</div>
+    <h2 id="result-title">Lower average peak, with overlapping runs</h2>
+    <div class="statline"><span class="old">52.7 MB before</span><span class="arrow">→</span><span class="new">50.3 MB after</span><span class="change">4.6% lower mean</span></div>
+    <div class="bar" aria-label="The updated mean peak was 95.4 percent of the old mean peak"><span></span></div>
+    <p class="caption" style="margin-top:12px">Peak physical memory from XCTest while the same generated 20-page PDF stayed open for 30 seconds. Two runs per version; decimal MB.</p>
+    <p>The old runs measured <strong>56.5 and 48.8 MB</strong>; the updated runs measured <strong>47.1 and 53.4 MB</strong>. The ranges overlap, so this small sample does not establish a reliable whole-app memory gain. The old build came from the branch's committed starting point in a temporary source archive. All runs used the same separately installed test app and document fixture.</p>
+  </section>
+
+  <section aria-labelledby="comparison-title">
+    <div class="eyebrow">02 / old versus new</div>
+    <h2 id="comparison-title">What changed under the surface</h2>
+    <table>
+      <thead><tr><th scope="col">Area</th><th scope="col">Before</th><th scope="col">Now</th></tr></thead>
+      <tbody>
+        <tr><td>100-page viewer after requesting pages 1, 51 and 100</td><td>Whole PDF rendered</td><td>3 pages rendered</td></tr>
+        <tr><td>Page views kept in the scrolling viewer</td><td>One per page</td><td>At most 5 nearby</td></tr>
+        <tr><td>Rendered-page cache</td><td>Unbounded session array</td><td>48 MiB budget</td></tr>
+        <tr><td>Scan and quality export</td><td>All page rasters collected</td><td>Pages written in sequence</td></tr>
+        <tr><td>20-page photo PDF peak on iPhone, two runs</td><td>48.8–56.5 MB</td><td>47.1–53.4 MB</td></tr>
+      </tbody>
+    </table>
+    <p class="caption" style="margin-top:13px">The cache budget covers the page session's stored images. SwiftUI and UIKit can also hold nearby displayed images, so 48 MiB is not a whole-app memory ceiling.</p>
+  </section>
+
+  <section aria-labelledby="work-title">
+    <div class="eyebrow">03 / implementation</div>
+    <h2 id="work-title">Changes made</h2>
+    <div class="columns">
+      <article><h3>Viewer</h3><p>The first page can use its existing library thumbnail during the hero transition. A page session opens the PDF once, renders requested pages off the main actor, and keeps only nearby page views and snapshots. A memory warning drops noncurrent cached pages.</p></article>
+      <article><h3>Scan and OCR</h3><p>The PDF writer accepts one page at a time. Scan saving and legacy searchable-PDF conversion now pass each page through OCR and writing in sequence, avoiding an array of every rendered page.</p></article>
+      <article><h3>Share and export</h3><p>Quality previews cancel obsolete work, share can reuse the selected prepared file, and each export gets its own temporary directory. Failed or canceled exports remove partial files; file size comes from the file system without reading the whole PDF into memory.</p></article>
+      <article><h3>Output quality</h3><p>PDF pages now rasterize to the selected target dimension. A regression test checks 1,280- and 2,240-pixel outputs from a standard PDF page, preventing a low-resolution export caused by the former one-times scale cap.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="verification-title">
+    <div class="eyebrow">04 / verification</div>
+    <h2 id="verification-title">What was exercised</h2>
+    <div class="columns">
+      <article><span class="status">Passed on iPhone</span><h3>Document pipeline</h3><p>Generated 100-page and 20-page PDFs; checked page-on-demand rendering, searchable text after scan saving and every export quality, actual file sizes, high and very-high exports of the 20-page photo PDF, and canceled export cleanup.</p></article>
+      <article><span class="status">6 of 6 UI tests passed</span><h3>Viewer interactions</h3><p>The library and ordinary-folder hero transitions, 100-page opening, scrolling and reopening, 20-page share setup, and both viewer memory scenarios passed on the iPhone. A system sign-in alert interrupted the first full run; the test harness canceled it and the rerun passed.</p></article>
+      <article><span class="status">62 of 62 unit tests passed</span><h3>Regression suite</h3><p>The final complete unit run passed on the iPhone. An earlier run had two intermittent ProStore lifecycle timeouts; both passed on rerun, and one also failed on the untouched baseline. The exact timing trigger remains unconfirmed.</p></article>
+      <article><span class="status limited">Scope</span><h3>What this does not prove</h3><p>The camera was not exercised. Secure viewing still uses a Data-backed PDF after protected temporary decryption, and its peak was not benchmarked here. OCR accuracy across languages, extreme page counts and long-running field use need larger data sets. Two memory iterations per version cannot establish a stable device-wide effect.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="method-title">
+    <div class="eyebrow">05 / method and references</div>
+    <h2 id="method-title">How to read the numbers</h2>
+    <p>The test app uses bundle ID <code>tn.document-scaner.performance</code>, separate from the personal app. It generated 150 archive entries plus 100-page, 20-page and one-page PDFs in its own container. <code>XCTMemoryMetric(application:)</code> sampled the test app while the 20-page document was visible. The report uses its <em>peak physical memory</em> value.</p>
+    <p>Apple recommends measuring a specific feature, reducing oversized image work, and guarding against memory regressions. The page-window and sequential PDF writer are engineering choices informed by that guidance; Apple does not prescribe these exact cache counts or sizes.</p>
+    <ul>
+      <li><a href="https://developer.apple.com/documentation/xcode/making-changes-to-reduce-memory-use">Apple: Making changes to reduce memory use</a></li>
+      <li><a href="https://developer.apple.com/documentation/xcode/reducing-your-app-s-memory-use">Apple: Reducing your app's memory use</a></li>
+      <li><a href="https://developer.apple.com/documentation/xctest/xctmemorymetric">Apple: XCTMemoryMetric</a></li>
+    </ul>
+  </section>
+
+  <footer>All branch changes, including this report, remain uncommitted. The original personal app data was not used by the generated-document tests.</footer>
+</main>
+</body>
+</html>

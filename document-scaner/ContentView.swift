@@ -17,6 +17,17 @@ struct ContentView: View {
 
     var body: some View {
         LibraryView()
+#if DEBUG
+            .task {
+                guard PerformanceFixture.isEnabled else { return }
+                do {
+                    try await PerformanceFixture.seedIfNeeded()
+                    await library.reload()
+                } catch {
+                    print("Performance fixture setup failed: \(error)")
+                }
+            }
+#endif
             .fullScreenCover(
                 isPresented: $isOnboardingPresented,
                 onDismiss: onboardingDidDismiss
@@ -35,6 +46,9 @@ struct ContentView: View {
     }
 
     private func updateOnboardingPresentation(for loadState: LibraryLoadState) {
+#if DEBUG
+        if PerformanceFixture.isEnabled { return }
+#endif
         let destination = AppLaunchPresentation.destination(
             lastSeenMajorIntroduction: lastSeenMajorIntroduction,
             loadState: loadState
