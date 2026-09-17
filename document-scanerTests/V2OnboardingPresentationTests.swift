@@ -1,6 +1,7 @@
 import XCTest
 @testable import DocScanner
 
+@MainActor
 final class V2OnboardingPresentationTests: XCTestCase {
     func testPhotoImportIntroductionAppearsBeforeFinalProStep() {
         XCTAssertEqual(V2OnboardingStep.allCases.count, 5)

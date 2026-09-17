@@ -143,6 +143,7 @@ final class ProStoreTests: XCTestCase {
             startLifecycle: true
         )
 
+        await eventually { store.product != nil && store.operation == .idle }
         let outcome = await store.purchase()
         XCTAssertEqual(outcome, .pending)
         XCTAssertEqual(store.operation, .pending)
@@ -213,6 +214,8 @@ final class ProStoreTests: XCTestCase {
             startLifecycle: true
         )
 
+        // Send the update after startup's empty entitlement refresh has finished.
+        await eventually { store.product != nil && store.operation == .idle }
         client.sendUpdate(transaction())
         await eventually { store.entitlementState == .entitledVerified }
         await eventually { store.operation == .idle }
@@ -267,13 +270,13 @@ final class ProStoreTests: XCTestCase {
     }
 
     private func makeStore(
-        client: FakeStoreKitClient = FakeStoreKitClient(),
-        cache: FakeEntitlementCache = FakeEntitlementCache()
+        client: FakeStoreKitClient? = nil,
+        cache: FakeEntitlementCache? = nil
     ) -> ProStore {
         ProStore(
             productIdentifier: productID,
-            client: client,
-            cache: cache,
+            client: client ?? FakeStoreKitClient(),
+            cache: cache ?? FakeEntitlementCache(),
             startLifecycle: false
         )
     }
