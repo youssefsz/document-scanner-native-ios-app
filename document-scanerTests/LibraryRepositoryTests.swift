@@ -21,6 +21,33 @@ final class LibraryRepositoryTests: XCTestCase {
         }
     }
 
+    func testMultipleRepositoryModelsKeepDocumentsAndFoldersInTheirOwnStores() async throws {
+        let otherPaths = StoragePaths(rootDirectory: temporaryDirectory.appendingPathComponent("OtherLibrary"))
+        let first = CoreDataLibraryRepository(paths: paths, inMemory: true)
+        let second = CoreDataLibraryRepository(paths: otherPaths, inMemory: true)
+        try await first.bootstrap()
+        try await second.bootstrap()
+
+        let document = makeDocument(title: "Shared identifier", offset: 0)
+        try await first.createDocument(document)
+        try await second.createDocument(document)
+        let firstFolder = try await first.createFolder(name: "First library")
+        let secondFolder = try await second.createFolder(name: "Second library")
+        try await first.moveDocuments(ids: [document.id], to: firstFolder.id)
+        try await second.moveDocuments(ids: [document.id], to: secondFolder.id)
+
+        let firstDocuments = try await first.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
+        let secondDocuments = try await second.fetchDocuments(scope: .all, query: "", sort: .newestFirst)
+        XCTAssertEqual(firstDocuments.map(\.id), [document.id])
+        XCTAssertEqual(secondDocuments.map(\.id), [document.id])
+        XCTAssertEqual(firstDocuments.first?.folderID, firstFolder.id)
+        XCTAssertEqual(secondDocuments.first?.folderID, secondFolder.id)
+        let firstNeedsMigration = try await first.needsLegacyMigration()
+        let secondNeedsMigration = try await second.needsLegacyMigration()
+        XCTAssertFalse(firstNeedsMigration)
+        XCTAssertFalse(secondNeedsMigration)
+    }
+
     func testLegacyMigrationPreservesEveryFieldAndFile() async throws {
         let id = UUID()
         let document = ScannedDocument(

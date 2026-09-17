@@ -389,7 +389,7 @@ actor DocumentExportService {
                 from: page,
                 maxDimension: quality.maxPageDimension
             )
-            let compressedRaster = try ScanPageRasterizer.recompressedRaster(
+            let compressedRaster = try await ScanPageRasterizer.recompressedRaster(
                 from: renderedRaster,
                 compressionQuality: quality.jpegCompressionQuality
             )

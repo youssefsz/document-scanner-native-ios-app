@@ -4,6 +4,14 @@ import os
 
 @objc(CDDocument)
 nonisolated final class CDDocument: NSManagedObject {
+    // Resolve against this context's model when multiple stores are loaded.
+    convenience init(in context: NSManagedObjectContext) {
+        guard let entity = NSEntityDescription.entity(forEntityName: "Document", in: context) else {
+            preconditionFailure("Missing Document entity in the library model")
+        }
+        self.init(entity: entity, insertInto: context)
+    }
+
     @NSManaged var id: UUID
     @NSManaged var title: String
     @NSManaged var normalizedTitle: String
@@ -23,6 +31,14 @@ nonisolated final class CDDocument: NSManagedObject {
 
 @objc(CDFolder)
 nonisolated final class CDFolder: NSManagedObject {
+    // Resolve against this context's model when multiple stores are loaded.
+    convenience init(in context: NSManagedObjectContext) {
+        guard let entity = NSEntityDescription.entity(forEntityName: "Folder", in: context) else {
+            preconditionFailure("Missing Folder entity in the library model")
+        }
+        self.init(entity: entity, insertInto: context)
+    }
+
     @NSManaged var id: UUID
     @NSManaged var name: String
     @NSManaged var normalizedName: String
@@ -38,6 +54,14 @@ nonisolated final class CDFolder: NSManagedObject {
 
 @objc(CDMigrationState)
 nonisolated final class CDMigrationState: NSManagedObject {
+    // Resolve against this context's model when multiple stores are loaded.
+    convenience init(in context: NSManagedObjectContext) {
+        guard let entity = NSEntityDescription.entity(forEntityName: "MigrationState", in: context) else {
+            preconditionFailure("Missing MigrationState entity in the library model")
+        }
+        self.init(entity: entity, insertInto: context)
+    }
+
     @NSManaged var identifier: String
     @NSManaged var completedAt: Date
     @NSManaged var checksum: String
@@ -202,7 +226,7 @@ actor CoreDataLibraryRepository: DocumentSecurityRepository {
             let request = CDDocument.fetchRequest()
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "id == %@", document.id as CVarArg)
-            let object = try context.fetch(request).first ?? CDDocument(context: context)
+            let object = try context.fetch(request).first ?? CDDocument(in: context)
             Self.apply(document, to: object)
             if let folderID = document.folderID {
                 guard let folder = try Self.fetchFolder(id: folderID, context: context) else {
@@ -265,7 +289,7 @@ actor CoreDataLibraryRepository: DocumentSecurityRepository {
         do {
             return try await perform { context in
                 try Self.ensureFolderNameAvailable(value.normalized, excluding: nil, context: context)
-                let object = CDFolder(context: context)
+                let object = CDFolder(in: context)
                 object.id = UUID()
                 object.name = value.display
                 object.normalizedName = value.normalized
@@ -559,7 +583,7 @@ actor CoreDataLibraryRepository: DocumentSecurityRepository {
             guard try Self.fetchDocument(id: change.documentID, context: context) == nil else {
                 throw LibraryRepositoryError.invalidSecurityState
             }
-            let document = CDDocument(context: context)
+            let document = CDDocument(in: context)
             document.id = change.documentID
             document.title = ""
             document.normalizedTitle = ""

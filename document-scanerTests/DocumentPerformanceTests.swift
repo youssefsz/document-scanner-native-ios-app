@@ -56,12 +56,29 @@ final class DocumentPerformanceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("page.pdf")
         try makePDF(pageCount: 1, at: url)
-        let page = try XCTUnwrap(PDFDocument(url: url)?.page(at: 0))
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        defer { withExtendedLifetime(document) {} }
+        let page = try XCTUnwrap(document.page(at: 0))
 
         let low = try SearchablePDFRenderer.renderUprightRaster(from: page, maxDimension: 1280)
         let high = try SearchablePDFRenderer.renderUprightRaster(from: page, maxDimension: 2240)
         XCTAssertEqual(max(low.cgImage.width, low.cgImage.height), 1280)
         XCTAssertEqual(max(high.cgImage.width, high.cgImage.height), 2240)
+    }
+
+    @MainActor
+    func testRecompressedRasterPreservesPageGeometry() async throws {
+        let original = try ScanPageRasterizer.makeUprightRaster(from: makeScanImage())
+
+        for quality in DocumentExportQuality.allCases {
+            let decoded = try await ScanPageRasterizer.recompressedRaster(
+                from: original,
+                compressionQuality: quality.jpegCompressionQuality
+            )
+            XCTAssertEqual(decoded.size, original.size)
+            XCTAssertEqual(decoded.pageRect, original.pageRect)
+            XCTAssertEqual(decoded.image.imageOrientation, .up)
+        }
     }
 
     func testScanAndEveryExportQualityProduceReadablePDFs() async throws {

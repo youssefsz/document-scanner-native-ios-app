@@ -73,6 +73,7 @@ struct DocumentDetailView: View {
             controlsOverlay
                 .opacity(showsControls ? 1 : 0)
                 .allowsHitTesting(showsControls)
+                .accessibilityHidden(!showsControls)
 
             if isDeleting {
                 deletingOverlay
@@ -235,7 +236,7 @@ struct DocumentDetailView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 240)
+                .frame(height: 150)
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -247,16 +248,21 @@ struct DocumentDetailView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, 24)
+            .padding(.bottom, 16)
         }
         .animation(.easeInOut(duration: 0.2), value: showsControls)
     }
 
     private var topBar: some View {
-        HStack(spacing: 16) {
-            ViewerControlButton(systemImage: "xmark") {
+        HStack(spacing: 12) {
+            Button {
                 dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 24, height: 24)
             }
+            .viewerChromeButtonStyle()
             .accessibilityLabel("Close document")
             .accessibilityIdentifier("document-viewer-close")
 
@@ -266,62 +272,96 @@ struct DocumentDetailView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
 
-                Text(currentDocument.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(currentDocument.createdAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
 
-            ViewerControlButton(
-                systemImage: "pencil",
-                isLoading: isRenaming,
-                action: startRename
-            )
-            .disabled(isDeleting || isPreparingShare)
-        }
-    }
+            Menu {
+                Button(action: startRename) {
+                    Label("Rename", systemImage: "pencil")
+                }
 
-    private var bottomBar: some View {
-        VStack(spacing: 14) {
-            if !renderedPages.isEmpty {
-                Text("Page \(currentPageNumber) of \(max(pageCount, currentDocument.pageCount))")
-                    .font(.subheadline.weight(.medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                    }
-            }
-
-            HStack {
-                ViewerControlButton(
-                    systemImage: "square.and.arrow.up",
-                    isLoading: isPreparingShare,
-                    action: startShare
-                )
-                .disabled(renderedPages.isEmpty || isDeleting || isRenaming)
-                .accessibilityLabel("Share document")
-                .accessibilityIdentifier("document-viewer-share")
-
-                Spacer()
-
-                ViewerControlButton(
-                    systemImage: "trash",
-                    isDestructive: true,
-                    isLoading: isDeleting
-                ) {
+                Button(role: .destructive) {
                     if confirmBeforeDelete {
                         isShowingDeleteConfirmation = true
                     } else {
                         deleteDocument()
                     }
+                } label: {
+                    Label("Delete Document", systemImage: "trash")
                 }
-                .disabled(isPreparingShare || isRenaming)
+            } label: {
+                if isRenaming {
+                    ProgressView()
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+            }
+            .viewerChromeButtonStyle()
+            .disabled(isDeleting || isPreparingShare || isRenaming)
+            .accessibilityLabel("More document actions")
+            .accessibilityIdentifier("document-viewer-more")
+        }
+    }
+
+    private var bottomBar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                pageIndicator
+                    .fixedSize()
+                Spacer(minLength: 8)
+                shareButton
+                    .fixedSize()
+            }
+
+            VStack(spacing: 12) {
+                pageIndicator
+                shareButton
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+                .allowsHitTesting(false)
+        }
+        .frame(maxWidth: 520)
+    }
+
+    private var pageIndicator: some View {
+        Text(renderedPages.isEmpty
+             ? (isLoadingPreview ? "Loading pages…" : "Preview unavailable")
+             : "Page \(currentPageNumber) of \(max(pageCount, currentDocument.pageCount))")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white.opacity(0.85))
+            .monospacedDigit()
+            .accessibilityIdentifier("document-viewer-page-count")
+    }
+
+    private var shareButton: some View {
+        Button(action: startShare) {
+            if isPreparingShare {
+                ProgressView()
+                    .accessibilityLabel("Preparing PDF")
+            } else {
+                Label("Share PDF", systemImage: "square.and.arrow.up")
+                    .font(.subheadline.weight(.semibold))
             }
         }
+        .viewerShareButtonStyle()
+        .disabled(renderedPages.isEmpty || isDeleting || isRenaming || isPreparingShare)
+        .accessibilityLabel(isPreparingShare ? "Preparing PDF" : "Share PDF")
+        .accessibilityIdentifier("document-viewer-share")
     }
 
     private var deletingOverlay: some View {
@@ -746,31 +786,37 @@ struct DocumentDetailView: View {
     }
 }
 
-private struct ViewerControlButton: View {
-    let systemImage: String
-    var isDestructive = false
-    var isLoading = false
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            guard !isLoading else { return }
-            action()
-        } label: {
-            Group {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.regular)
-                        .tint(isDestructive ? .red : .white)
-                        .foregroundStyle(isDestructive ? .red : .white)
-                } else {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 17, weight: .semibold))
-                }
-            }
-            .frame(width: 44, height: 44)
+private extension View {
+    @ViewBuilder
+    func viewerChromeButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .tint(.white)
+                .frame(minWidth: 44, minHeight: 44)
+        } else {
+            buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(.white)
+                .frame(minWidth: 44, minHeight: 44)
         }
-        .appViewerControlButtonStyle(isDestructive: isDestructive)
+    }
+
+    @ViewBuilder
+    func viewerShareButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(.accentColor)
+        } else {
+            buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(.accentColor)
+        }
     }
 }
 

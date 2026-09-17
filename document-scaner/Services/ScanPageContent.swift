@@ -100,16 +100,23 @@ enum ScanPageRasterizer {
     nonisolated static func recompressedRaster(
         from raster: ScanPageRaster,
         compressionQuality: CGFloat
-    ) throws -> ScanPageRaster {
+    ) async throws -> ScanPageRaster {
+        try Task.checkCancellation()
         let clampedQuality = min(max(compressionQuality, 0.05), 1)
 
         guard let data = raster.image.jpegData(compressionQuality: clampedQuality),
-              let image = UIImage(data: data),
-              let cgImage = image.cgImage else {
+              let image = UIImage(data: data) else {
             throw DocumentStoreError.pdfCreationFailed
         }
 
-        return ScanPageRaster(image: image, cgImage: cgImage)
+        // Decode asynchronously so OCR and PDF drawing don't block on the JPEG decoder.
+        guard let decodedImage = await image.byPreparingForDisplay(),
+              let cgImage = decodedImage.cgImage else {
+            throw DocumentStoreError.pdfCreationFailed
+        }
+        try Task.checkCancellation()
+
+        return ScanPageRaster(image: decodedImage, cgImage: cgImage)
     }
 }
 

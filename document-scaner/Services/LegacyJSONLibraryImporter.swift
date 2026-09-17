@@ -56,7 +56,7 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
             let request = CDDocument.fetchRequest()
             request.fetchLimit = 1
             request.predicate = NSPredicate(format: "id == %@", document.id as CVarArg)
-            let object = try context.fetch(request).first ?? CDDocument(context: context)
+            let object = try context.fetch(request).first ?? CDDocument(in: context)
             object.id = document.id
             object.title = document.title
             object.normalizedTitle = LibraryTextNormalizer.normalize(document.title)
@@ -78,7 +78,7 @@ nonisolated struct LegacyJSONLibraryImporter: Sendable {
             throw LibraryRepositoryError.migrationFailed("Not every legacy record could be prepared for import.")
         }
 
-        let marker = CDMigrationState(context: context)
+        let marker = CDMigrationState(in: context)
         marker.identifier = Self.migrationIdentifier
         marker.completedAt = .now
         marker.checksum = Self.checksum(sourceData)
