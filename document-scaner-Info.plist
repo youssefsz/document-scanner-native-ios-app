@@ -32,6 +32,8 @@
 	<string>Use Face ID to unlock secure folders.</string>
 	<key>ProProductID</key>
 	<string>$(PRO_PRODUCT_ID)</string>
+	<key>VaultTransferReminderEnabled</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

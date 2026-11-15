@@ -187,7 +187,7 @@ actor DocumentSecurityCoordinator {
             try? fileManager.removeItem(at: operationDirectory)
         } catch {
             if !metadataCommitted {
-                rollbackFiles(in: manifest)
+                try rollbackFiles(assets: manifest.assets)
                 try? fileManager.removeItem(at: operationDirectory)
             }
             throw error
@@ -202,44 +202,42 @@ actor DocumentSecurityCoordinator {
             options: [.skipsHiddenFiles]
         )) ?? []
         sensitiveItems.forEach { try? fileManager.removeItem(at: $0) }
-        let directories = (try? fileManager.contentsOfDirectory(
-            at: paths.securityOperationsDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
+        let directories = try fileManager.contentsOfDirectory(
+            at: paths.securityOperationsDirectory, includingPropertiesForKeys: nil
+        )
 
         for directory in directories {
-            let deletionURL = directory.appendingPathComponent("secure-delete.json")
-            if let data = try? Data(contentsOf: deletionURL),
-               let manifest = try? JSONDecoder().decode(SecureDeletionManifest.self, from: data) {
-                let metadataExists = (try? await repository.secureDocumentMetadataExists(ids: Set(manifest.documentIDs))) == true
-                if metadataExists { rollbackDeletion(manifest) }
-                try? fileManager.removeItem(at: directory)
-                continue
-            }
-            let moveURL = directory.appendingPathComponent("secure-move.json")
-            if let data = try? Data(contentsOf: moveURL),
-               let manifest = try? JSONDecoder().decode(SecureMoveManifest.self, from: data) {
-                let changesMatch = (try? await repository.documentSecurityChangesMatch(manifest.changes)) == true
-                let committed = !manifest.changes.isEmpty && changesMatch
-                if !committed {
-                    rollbackFiles(assets: manifest.assets)
+            let filenames = try fileManager.contentsOfDirectory(atPath: directory.path)
+            if filenames.contains("secure-delete.json") {
+                let data = try Data(contentsOf: directory.appendingPathComponent("secure-delete.json"))
+                let manifest = try JSONDecoder().decode(SecureDeletionManifest.self, from: data)
+                if try await repository.secureDocumentMetadataExists(ids: Set(manifest.documentIDs)) {
+                    try rollbackDeletion(manifest)
                 }
-                try? fileManager.removeItem(at: directory)
+            } else if filenames.contains("secure-move.json") {
+                let data = try Data(contentsOf: directory.appendingPathComponent("secure-move.json"))
+                let manifest = try JSONDecoder().decode(SecureMoveManifest.self, from: data)
+                let committed = try await repository.documentSecurityChangesMatch(manifest.changes)
+                if manifest.changes.isEmpty || !committed {
+                    try rollbackFiles(assets: manifest.assets)
+                }
+            } else if filenames.contains("operation.json") {
+                let data = try Data(contentsOf: directory.appendingPathComponent("operation.json"))
+                let manifest = try JSONDecoder().decode(SecurityOperationManifest.self, from: data)
+                let committed = try await repository.securityCommitMatches(
+                    folderID: manifest.folderID, targetSecurity: manifest.targetSecurity, changes: manifest.changes
+                )
+                if !committed {
+                    try rollbackFiles(assets: manifest.assets)
+                }
+            } else {
+                // An unrecognized operation may contain the only remaining copy.
+                // Keep it so key creation and restore will fail closed.
                 continue
             }
-            let manifestURL = directory.appendingPathComponent("operation.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(SecurityOperationManifest.self, from: data) else {
-                continue
-            }
-            let committed = (try? await repository.securityCommitMatches(
-                folderID: manifest.folderID,
-                targetSecurity: manifest.targetSecurity,
-                changes: manifest.changes
-            )) == true
-            if !committed { rollbackFiles(in: manifest) }
-            try? fileManager.removeItem(at: directory)
+            // A read, metadata, or rollback failure must leave the journal and
+            // any remaining originals in place for the next attempt.
+            try fileManager.removeItem(at: directory)
         }
     }
 
@@ -324,7 +322,7 @@ actor DocumentSecurityCoordinator {
             try? fileManager.removeItem(at: operationDirectory)
             await SecureThumbnailPipeline.shared.clearAll()
         } catch {
-            if !metadataCommitted { rollbackFiles(assets: manifest.assets) }
+            if !metadataCommitted { try rollbackFiles(assets: manifest.assets) }
             try? fileManager.removeItem(at: operationDirectory)
             throw error
         }
@@ -397,7 +395,7 @@ actor DocumentSecurityCoordinator {
             metadataCommitted = true
             try? fileManager.removeItem(at: operationDirectory)
         } catch {
-            if !metadataCommitted { rollbackFiles(assets: manifest.assets) }
+            if !metadataCommitted { try rollbackFiles(assets: manifest.assets) }
             try? fileManager.removeItem(at: operationDirectory)
             throw error
         }
@@ -503,7 +501,7 @@ actor DocumentSecurityCoordinator {
             try? fileManager.removeItem(at: operationDirectory)
             await SecureThumbnailPipeline.shared.clearAll()
         } catch {
-            if !metadataCommitted { rollbackFiles(assets: manifest.assets) }
+            if !metadataCommitted { try rollbackFiles(assets: manifest.assets) }
             try? fileManager.removeItem(at: operationDirectory)
             throw error
         }
@@ -578,7 +576,7 @@ actor DocumentSecurityCoordinator {
             try? fileManager.removeItem(at: operationDirectory)
             await SecureThumbnailPipeline.shared.clearAll()
         } catch {
-            if !metadataCommitted { rollbackDeletion(manifest) }
+            if !metadataCommitted { try rollbackDeletion(manifest) }
             try? fileManager.removeItem(at: operationDirectory)
             throw error
         }
@@ -717,28 +715,34 @@ actor DocumentSecurityCoordinator {
         }
     }
 
-    private func rollbackFiles(in manifest: SecurityOperationManifest) {
-        rollbackFiles(assets: manifest.assets)
-    }
-
-    private func rollbackFiles(assets: [SecurityOperationManifest.Asset]) {
+    private func rollbackFiles(assets: [SecurityOperationManifest.Asset]) throws {
         for asset in assets.reversed() {
-            if fileManager.fileExists(atPath: asset.finalURL.path) {
-                try? fileManager.removeItem(at: asset.finalURL)
+            if try itemExists(asset.recoveryURL) {
+                guard try !itemExists(asset.originalURL) else { throw VaultBackupError.conflict }
+                try fileManager.moveItem(at: asset.recoveryURL, to: asset.originalURL)
             }
-            if fileManager.fileExists(atPath: asset.recoveryURL.path),
-               !fileManager.fileExists(atPath: asset.originalURL.path) {
-                try? fileManager.moveItem(at: asset.recoveryURL, to: asset.originalURL)
+            if try itemExists(asset.finalURL) {
+                try fileManager.removeItem(at: asset.finalURL)
             }
         }
     }
 
-    private func rollbackDeletion(_ manifest: SecureDeletionManifest) {
+    private func rollbackDeletion(_ manifest: SecureDeletionManifest) throws {
         for move in manifest.moves.reversed() {
-            guard fileManager.fileExists(atPath: move.recoveryURL.path),
-                  !fileManager.fileExists(atPath: move.originalURL.path),
-                  (try? checksum(of: move.recoveryURL)) == move.encryptedChecksum else { continue }
-            try? fileManager.moveItem(at: move.recoveryURL, to: move.originalURL)
+            guard try itemExists(move.recoveryURL) else { continue }
+            guard try !itemExists(move.originalURL),
+                  try checksum(of: move.recoveryURL) == move.encryptedChecksum else { throw VaultBackupError.conflict }
+            try fileManager.moveItem(at: move.recoveryURL, to: move.originalURL)
+        }
+    }
+
+    private func itemExists(_ url: URL) throws -> Bool {
+        do {
+            _ = try fileManager.attributesOfItem(atPath: url.path)
+            return true
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
+            [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
+            return false
         }
     }
 

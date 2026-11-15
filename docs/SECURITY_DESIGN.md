@@ -4,7 +4,11 @@ This document describes the on-device secure-folder format and its recovery rule
 
 ## Trust boundary and keys
 
-The app creates one random 256-bit root vault key when the first secure folder is created. `VaultKeyStore` stores it as a versioned generic-password Keychain item protected by `userPresence` and `kSecAttrAccessibleWhenUnlocked`. A successful Face ID, Touch ID, or device-passcode action returns a memory-only, folder-scoped `VaultAccess`. Access is invalidated when the user leaves the secure navigation flow, the app becomes inactive, protected data becomes unavailable, or an unrecoverable secure operation fails.
+The app creates one random 256-bit root vault key after checking an unfiltered inventory of protected metadata, files, and unfinished security operations. Key creation runs only through the secure-folder creation path. Opening a folder never generates a key.
+
+`VaultKeyStore` writes the key as a generic-password item explicitly scoped to `group.tn.document-scaner.app.vault`, with `userPresence` and `kSecAttrAccessibleWhenUnlocked`. The seller bridge reads the previous selector in the default Keychain group. It writes the same key to the App Group, reads it back, and compares it before reporting success. The item in the default group remains untouched. If two readable items disagree, the app returns a conflict. The two selectors use different account names so the legacy query cannot match the new item. See the [transfer runbook](VAULT_TRANSFER.md) for signing and rollout.
+
+A successful Face ID, Touch ID, or device-passcode action returns a memory-only, folder-scoped `VaultAccess`. Access is invalidated when the user leaves the secure navigation flow, the app becomes inactive, protected data becomes unavailable, or an unrecoverable secure operation fails.
 
 The root key, unlocked state, generated PDF passwords, and decrypted titles are never written to Core Data, UserDefaults, logs, analytics, or filenames. Removing the app or losing a device without a usable backup can make secure documents unrecoverable.
 
@@ -25,6 +29,14 @@ Vault, staging, recovery, and sensitive temporary files use complete file protec
 The coordinator stages every replacement before changing live data. Encrypted output is reopened, authenticated, decrypted, and checksum-verified. Decrypted PDFs are reopened to verify page count, and previews are decoded to verify readability. Originals then move to recovery, replacements move to final paths, and all filenames, protection fields, title blobs, folder relationships, and folder security state are committed in one Core Data save. Recovery data is deleted only after that save succeeds.
 
 Before metadata commit, cancellation or failure restores all originals and leaves the previous metadata state intact. At launch, manifests are compared with Core Data. If the commit did not occur, originals are restored. If it did occur, stale staging and recovery data are removed. Format changes must introduce a new envelope version and reader. The shipped version 1 layout must not be changed in place.
+
+## Encrypted vault backup, version 1
+
+A vault backup contains a versioned `DSBACK01` header, an AES-GCM encrypted manifest, and the original encrypted PDF and preview envelopes. CryptoKit generates a new 256-bit secret for each export. The displayed Base64 code encodes that secret directly. The authenticated manifest binds the format header and each asset's length, document UUID, and kind. It contains the vault key, folder metadata, and encrypted title blobs. The asset envelopes authenticate each chunk with the recovered root key. The code stays out of the archive and is not saved by DocScanner.
+
+Restore authenticates the manifest, titles, and all asset chunks before changing the library. It rejects unknown versions, filename and identity collisions, missing or trailing bytes, and inconsistent metadata. For an existing vault, it verifies all current protected files and titles with the candidate key before installing it. If there are no encrypted documents to verify in an existing vault, restore requires an already accessible matching key. No document rows or files are merged or replaced in an existing vault.
+
+On a device without an existing vault, restore checks for database conflicts, reads back the App Group key, and installs only verified encrypted files without replacing destination files. It makes the new folders and document references visible in one Core Data save. If the process stops after inserting the Keychain item or some files, retrying the same archive reuses the matching key and identical files. A failed save removes files installed by that attempt; it keeps earlier files and all preexisting keys. Normal unlock and backup need device authentication, and restore requires both the recovery code and device authentication. These paths do not depend on a Pro cache.
 
 ## PDF sharing
 

@@ -107,7 +107,7 @@ nonisolated private final class PersistentStoreLoadGate: @unchecked Sendable {
     }
 }
 
-actor CoreDataLibraryRepository: DocumentSecurityRepository {
+actor CoreDataLibraryRepository: DocumentSecurityRepository, VaultRecoveryRepository {
     private let paths: StoragePaths
     private let fileManager: FileManager
     private let container: NSPersistentContainer
@@ -596,6 +596,80 @@ actor CoreDataLibraryRepository: DocumentSecurityRepository {
             document.secureTitleBlob = change.secureTitleBlob
             document.folder = folder
             try context.save()
+        }
+    }
+
+    func vaultInventory() async throws -> VaultInventory {
+        try await ensureStoreLoaded()
+        return try await perform { context in
+            let folders = CDFolder.fetchRequest()
+            folders.predicate = NSPredicate(format: "isSecure == YES")
+            // Include orphan rows and unknown versions. Search results hide these.
+            let documents = CDDocument.fetchRequest()
+            documents.predicate = Self.vaultMetadataPredicate
+            return try VaultInventory(
+                folders: context.fetch(folders).map(Self.folder(from:)),
+                documents: context.fetch(documents).map {
+                    .init(document: Self.document(from: $0), secureTitleBlob: $0.secureTitleBlob)
+                }
+            )
+        }
+    }
+
+    func checkVaultImport(_ inventory: VaultInventory) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            try Self.checkVaultImport(inventory, in: context)
+        }
+    }
+
+    func importVault(_ inventory: VaultInventory) async throws {
+        try await ensureStoreLoaded()
+        try await perform { context in
+            try Self.checkVaultImport(inventory, in: context)
+            context.mergePolicy = NSErrorMergePolicy
+            var folders = [UUID: CDFolder]()
+            for folder in inventory.folders {
+                let object = CDFolder(in: context)
+                object.id = folder.id
+                object.name = folder.name
+                object.normalizedName = folder.normalizedName
+                object.createdAt = folder.createdAt
+                object.updatedAt = folder.updatedAt
+                object.isSecure = true
+                folders[folder.id] = object
+            }
+            for record in inventory.documents {
+                guard let folderID = record.document.folderID, let folder = folders[folderID] else {
+                    throw VaultBackupError.conflict
+                }
+                let object = CDDocument(in: context)
+                Self.apply(record.document, to: object)
+                object.secureTitleBlob = record.secureTitleBlob
+                object.folder = folder
+            }
+            try context.save()
+        }
+    }
+
+    private static var vaultMetadataPredicate: NSPredicate {
+        NSPredicate(format: "protectionKind != 0 OR protectionFormatVersion != 0 OR secureTitleBlob != nil OR folder.isSecure == YES")
+    }
+
+    private static func checkVaultImport(_ inventory: VaultInventory, in context: NSManagedObjectContext) throws {
+        let folders = CDFolder.fetchRequest()
+        folders.predicate = NSPredicate(
+            format: "isSecure == YES OR id IN %@ OR normalizedName IN %@",
+            inventory.folders.map(\.id), inventory.folders.map(\.normalizedName)
+        )
+        folders.fetchLimit = 1
+        let documents = CDDocument.fetchRequest()
+        documents.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
+            vaultMetadataPredicate, NSPredicate(format: "id IN %@", inventory.documents.map { $0.document.id })
+        ])
+        documents.fetchLimit = 1
+        guard try context.count(for: folders) == 0, try context.count(for: documents) == 0 else {
+            throw VaultBackupError.conflict
         }
     }
 

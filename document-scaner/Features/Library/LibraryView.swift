@@ -8,6 +8,8 @@ import SwiftUI
 import UIKit
 
 struct LibraryView: View {
+    var vaultUnlockRequest: DocumentFolder? = nil
+
     @EnvironmentObject private var library: DocumentLibrary
     @EnvironmentObject private var proStore: ProStore
     @Environment(\.scenePhase) private var scenePhase
@@ -32,7 +34,8 @@ struct LibraryView: View {
     @State private var folderPendingDeletion: FolderSummary?
     @State private var folderSecurityChange: FolderSecurityChangeRequest?
     @State private var folderNavigationPath: [DocumentFolder] = []
-    @State private var authenticatingFolderID: UUID?
+    @State private var openingSecureFolder: (folderID: UUID, attempt: UUID)?
+    @State private var recoveryFolderID: UUID?
     @State private var pendingSecureFolderNavigation: DocumentFolder?
     @State private var isDeletingFolder = false
     @State private var pendingScanPages: [UIImage] = []
@@ -40,6 +43,8 @@ struct LibraryView: View {
     @State private var selectedDocument: ScannedDocument?
     @State private var selectedDocumentIDs: Set<ScannedDocument.ID> = []
     @Namespace private var documentHeroNamespace
+
+    private var authenticatingFolderID: UUID? { openingSecureFolder?.folderID }
 
     private let gridSpacing: CGFloat = 16
     private let horizontalPadding: CGFloat = 16
@@ -124,7 +129,8 @@ struct LibraryView: View {
                         folder: folder,
                         initialAccess: folder.isSecure
                             ? library.activeSecureFolderAccess(for: folder.id)
-                            : nil
+                            : nil,
+                        needsRecovery: recoveryFolderID == folder.id
                     )
                         .environmentObject(library)
                 }
@@ -144,8 +150,14 @@ struct LibraryView: View {
         .onChange(of: documentSortOrder) { value in
             library.updateSortOrder(rawValue: value)
         }
+        .onChange(of: vaultUnlockRequest) { folder in
+            if let folder { openFolder(folder) }
+        }
         .onChange(of: scenePhase) { phase in
             handleScenePhase(phase)
+        }
+        .onChange(of: pendingSecureFolderNavigation) { _ in
+            if scenePhase == .active { openPendingSecureFolder() }
         }
         .onChange(of: library.selectedSection) { section in
             if section == .folders { endSelectionMode() }
@@ -318,6 +330,13 @@ struct LibraryView: View {
             if library.selectedSection == .library {
                 documentRootContent(columns: columns)
             } else {
+                if let folder = library.secureFolderForTransferReminder,
+                   library.folderSearchQuery.isEmpty, folderNavigationPath.isEmpty {
+                    VaultTransferReminderRow { openFolder(folder) }
+                        .disabled(authenticatingFolderID != nil)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.top, 12)
+                }
                 folderRootContent(columns: columns)
             }
         }
@@ -495,54 +514,55 @@ struct LibraryView: View {
             return
         }
 
-        authenticatingFolderID = folder.id
+        let attempt = UUID()
+        openingSecureFolder = (folder.id, attempt)
+        recoveryFolderID = nil
         Task { @MainActor in
-            let access = await library.unlockSecureFolder(folder)
-            guard authenticatingFolderID == folder.id else {
-                if access?.isValid == true {
-                    library.lockSecureFolder(id: folder.id)
+            let access: VaultAccess
+            do {
+                access = try await library.unlockSecureFolder(folder)
+            } catch {
+                guard openingSecureFolder?.attempt == attempt else { return }
+                if (error as? VaultAuthenticationError) == .recoveryRequired {
+                    recoveryFolderID = folder.id
+                    pendingSecureFolderNavigation = folder
+                    return
+                }
+                openingSecureFolder = nil
+                if !(error is CancellationError), (error as? VaultAuthenticationError) != .cancelled {
+                    library.activeError = LibraryError(message: error.localizedDescription)
                 }
                 return
             }
-            guard access?.isValid == true else {
-                authenticatingFolderID = nil
+            guard openingSecureFolder?.attempt == attempt else {
+                access.invalidate()
+                return
+            }
+            guard access.isValid else {
+                openingSecureFolder = nil
                 return
             }
 
-            switch scenePhase {
-            case .active:
-                finishOpeningSecureFolder(folder)
-            case .inactive:
-                pendingSecureFolderNavigation = folder
-            case .background:
-                library.lockSecureFolder(id: folder.id)
-                authenticatingFolderID = nil
-            @unknown default:
-                library.lockSecureFolder(id: folder.id)
-                authenticatingFolderID = nil
-            }
+            pendingSecureFolderNavigation = folder
         }
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {
         if phase == .background {
             pendingSecureFolderNavigation = nil
-            authenticatingFolderID = nil
-            return
+            openingSecureFolder = nil
+        } else if phase == .active {
+            openPendingSecureFolder()
         }
-
-        guard phase == .active, let folder = pendingSecureFolderNavigation else { return }
-        guard library.activeSecureFolderAccess(for: folder.id)?.isValid == true else {
-            pendingSecureFolderNavigation = nil
-            authenticatingFolderID = nil
-            return
-        }
-        finishOpeningSecureFolder(folder)
     }
 
-    private func finishOpeningSecureFolder(_ folder: DocumentFolder) {
+    private func openPendingSecureFolder() {
+        guard let folder = pendingSecureFolderNavigation else { return }
         pendingSecureFolderNavigation = nil
-        authenticatingFolderID = nil
+        openingSecureFolder = nil
+        guard recoveryFolderID == folder.id || library.activeSecureFolderAccess(for: folder.id)?.isValid == true else {
+            return
+        }
         folderNavigationPath.append(folder)
     }
 

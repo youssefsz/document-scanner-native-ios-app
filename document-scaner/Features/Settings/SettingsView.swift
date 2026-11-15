@@ -72,6 +72,14 @@ struct SettingsView: View {
                 Text("These settings affect the way documents are displayed, how PDFs are prepared for sharing, and how deletion is handled.")
             }
 
+            Section("Secure Folders") {
+                NavigationLink {
+                    VaultRecoveryView()
+                } label: {
+                    Label("Vault Transfer & Backup", systemImage: "lock.shield")
+                }
+            }
+
             Section {
                 Toggle("Auto-Detect Languages", isOn: $ocrAutoDetectLanguage)
                     .onChange(of: ocrAutoDetectLanguage) { newValue in

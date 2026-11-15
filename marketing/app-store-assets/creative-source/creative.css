@@ -1,0 +1,30 @@
+:root {
+  color: #fff;
+  background: #0765c7;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body, main { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+main { position: relative; isolation: isolate; }
+h1 { margin: 0; font-weight: 750; letter-spacing: -.05em; }
+p { margin: 0; color: #e9f3ff; font-weight: 500; letter-spacing: -.02em; }
+.copy, .artwork { position: absolute; }
+.copy { z-index: 1; }
+
+.header main {
+  background: linear-gradient(116deg, #0765c7 0%, #0765c7 51%, #086ed1 100%);
+}
+.header .copy { left: 600px; top: 432px; width: 1300px; }
+.header h1 { font-size: 310px; line-height: 1.03; }
+.header p { margin-top: 98px; font-size: 84px; line-height: 1.2; }
+.header .artwork { left: 1870px; top: 480px; width: 1645px; }
+
+.search main {
+  background: radial-gradient(ellipse at 55% 70%, #1178df 0%, #0765c7 61%, #075bb8 100%);
+}
+.search .copy { top: 262px; left: 340px; right: 340px; text-align: center; }
+.search h1 { font-size: 302px; line-height: 1.06; }
+.search p { margin-top: 30px; font-size: 123px; line-height: 1.2; }
+.search .artwork { left: 575px; top: 627px; width: 2680px; }
