@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated struct SecurityDocumentRecord: Sendable {
+nonisolated struct SecurityDocumentRecord: Codable, Sendable {
     let document: ScannedDocument
     let secureTitleBlob: Data?
 }

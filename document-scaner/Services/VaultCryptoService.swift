@@ -105,6 +105,30 @@ nonisolated struct VaultCryptoService: @unchecked Sendable {
         kind: VaultAssetKind,
         access: VaultAccess
     ) throws {
+        let temporaryURL = try protectedTemporaryURL(nextTo: destinationURL)
+        defer { try? fileManager.removeItem(at: temporaryURL) }
+        fileManager.createFile(atPath: temporaryURL.path, contents: nil, attributes: [.protectionKey: FileProtectionType.complete])
+        let output = try FileHandle(forWritingTo: temporaryURL)
+        defer { try? output.close() }
+        try readFile(at: sourceURL, documentID: documentID, kind: kind, access: access) {
+            try output.write(contentsOf: $0)
+        }
+        try output.synchronize()
+        try installVerifiedTemporary(temporaryURL, at: destinationURL)
+    }
+
+    /// Authenticate every chunk without creating a plaintext file.
+    func verifyFile(at url: URL, documentID: UUID, kind: VaultAssetKind, access: VaultAccess) throws {
+        try readFile(at: url, documentID: documentID, kind: kind, access: access) { _ in }
+    }
+
+    private func readFile(
+        at sourceURL: URL,
+        documentID: UUID,
+        kind: VaultAssetKind,
+        access: VaultAccess,
+        consume: (Data) throws -> Void
+    ) throws {
         guard kind != .title else { throw VaultCryptoError.wrongAssetKind }
         try access.withRootKey { rootKey in
             let input = try FileHandle(forReadingFrom: sourceURL)
@@ -112,12 +136,6 @@ nonisolated struct VaultCryptoService: @unchecked Sendable {
             let headerData = try readExactly(Self.assetHeaderLength, from: input)
             let header = try parseAssetHeader(headerData, expectedDocumentID: documentID, expectedKind: kind)
             let key = deriveKey(rootKey: rootKey, salt: header.salt, documentID: documentID, kind: kind)
-            let temporaryURL = try protectedTemporaryURL(nextTo: destinationURL)
-            defer { try? fileManager.removeItem(at: temporaryURL) }
-
-            fileManager.createFile(atPath: temporaryURL.path, contents: nil, attributes: [.protectionKey: FileProtectionType.complete])
-            let output = try FileHandle(forWritingTo: temporaryURL)
-            defer { try? output.close() }
             var written: UInt64 = 0
 
             for index in 0..<header.chunkCount {
@@ -146,7 +164,7 @@ nonisolated struct VaultCryptoService: @unchecked Sendable {
                 let remaining = header.originalLength - written
                 let expected = Int(min(UInt64(header.chunkSize), remaining))
                 guard plaintext.count == expected else { throw VaultCryptoError.malformedEnvelope }
-                try output.write(contentsOf: plaintext)
+                try consume(plaintext)
                 written += UInt64(plaintext.count)
             }
 
@@ -154,8 +172,6 @@ nonisolated struct VaultCryptoService: @unchecked Sendable {
             if let trailing = try input.read(upToCount: 1), !trailing.isEmpty {
                 throw VaultCryptoError.malformedEnvelope
             }
-            try output.synchronize()
-            try installVerifiedTemporary(temporaryURL, at: destinationURL)
         }
     }
 
@@ -304,7 +320,7 @@ nonisolated struct VaultCryptoService: @unchecked Sendable {
         guard reader.isAtEnd,
               chunkSize == UInt32(Self.chunkSize),
               chunkCount > 0,
-              UInt64(chunkCount) == max(1, (originalLength + UInt64(chunkSize) - 1) / UInt64(chunkSize)) else {
+              UInt64(chunkCount) == max(1, originalLength / UInt64(chunkSize) + (originalLength % UInt64(chunkSize) == 0 ? 0 : 1)) else {
             throw VaultCryptoError.malformedEnvelope
         }
         return AssetHeader(salt: salt, originalLength: originalLength, chunkSize: chunkSize, chunkCount: chunkCount)

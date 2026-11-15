@@ -7,7 +7,7 @@ nonisolated enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
-nonisolated struct DocumentFolder: Identifiable, Hashable, Sendable {
+nonisolated struct DocumentFolder: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let name: String
     let normalizedName: String

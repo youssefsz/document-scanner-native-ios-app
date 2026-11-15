@@ -16,6 +16,8 @@ enum AppPreferenceKey {
     nonisolated static let hasCreatedFirstDocument = "hasCreatedFirstDocument"
     nonisolated static let pendingReviewDocumentID = "pendingReviewDocumentID"
     nonisolated static let hasRequestedNativeReview = "hasRequestedNativeReview"
+    nonisolated static let vaultTransferVerified = "vaultTransferVerified"
+    nonisolated static let vaultTransferReminderDeferredUntil = "vaultTransferReminderDeferredUntil"
     nonisolated static let lastSeenMajorIntroduction = "lastSeenMajorIntroduction"
 }
 

@@ -19,12 +19,16 @@ final class DocumentLibrary: ObservableObject {
     @Published var folderSearchQuery = ""
     @Published private(set) var securityConversionProgress: [UUID: SecurityConversionProgress] = [:]
     @Published private(set) var isAuthenticatingSecureContent = false
+    @Published private(set) var vaultTransferStatus: VaultTransferStatus?
+    @Published private(set) var hasVerifiedVaultTransfer: Bool
 
     private let repository: any LibraryRepository
     private let store: DocumentStore
     private let securityCoordinator: DocumentSecurityCoordinator?
     private let securityRepository: (any DocumentSecurityRepository)?
     private let vaultKeyStore: VaultKeyStore
+    private let vaultBackup: VaultBackupService?
+    private let preferences: UserDefaults
     private let secureSessions: SecureFolderSessionController
     private let contentProvider: any DocumentContentProviding
     private let proAccess: any ProAccessProviding
@@ -35,6 +39,15 @@ final class DocumentLibrary: ObservableObject {
     private var folderSearchTask: Task<Void, Never>?
     private var securityConversionTasks: [UUID: Task<Void, Error>] = [:]
     private var secureAuthenticationCount = 0
+    private var secureMutationCount = 0
+    private var isVaultMaintenanceActive = false
+    private var isReloading = false
+    private var vaultLockGeneration = 0
+
+    var secureFolderForTransferReminder: DocumentFolder? {
+        guard VaultTransferReminder.isEnabled, hasLoaded, !hasVerifiedVaultTransfer else { return nil }
+        return allFolders.first { $0.folder.isSecure }?.folder
+    }
 
     var isLoading: Bool {
         switch loadState {
@@ -50,14 +63,21 @@ final class DocumentLibrary: ObservableObject {
         store: DocumentStore? = nil,
         securityCoordinator: DocumentSecurityCoordinator? = nil,
         vaultKeyStore: VaultKeyStore = VaultKeyStore(),
+        vaultPaths: StoragePaths = .production,
         secureSessions: SecureFolderSessionController? = nil,
         contentProvider: any DocumentContentProviding = DocumentContentProvider(),
-        proAccess: (any ProAccessProviding)? = nil
+        proAccess: (any ProAccessProviding)? = nil,
+        preferences: UserDefaults = .standard
     ) {
         let resolvedRepository = repository ?? CoreDataLibraryRepository()
         self.repository = resolvedRepository
         self.store = store ?? DocumentStore(repository: resolvedRepository)
         self.vaultKeyStore = vaultKeyStore
+        self.preferences = preferences
+        self.hasVerifiedVaultTransfer = preferences.bool(forKey: AppPreferenceKey.vaultTransferVerified)
+        vaultBackup = (resolvedRepository as? any VaultRecoveryRepository).map {
+            VaultBackupService(repository: $0, paths: vaultPaths, keys: vaultKeyStore)
+        }
         self.secureSessions = secureSessions ?? SecureFolderSessionController()
         self.contentProvider = contentProvider
         self.proAccess = proAccess ?? FreeProAccessProvider()
@@ -77,6 +97,11 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func reload() async {
+        guard !isVaultMaintenanceActive, !isReloading else { return }
+        isReloading = true
+        hasLoaded = false
+        mutationsEnabled = false
+        defer { isReloading = false }
         documentSearchTask?.cancel()
         folderSearchTask?.cancel()
         isDocumentSearchPending = false
@@ -85,14 +110,15 @@ final class DocumentLibrary: ObservableObject {
         activeError = nil
 
         do {
+            guard UIApplication.shared.isProtectedDataAvailable else { throw VaultAuthenticationError.deviceLocked }
             if try await repository.needsLegacyMigration() {
                 loadState = .migrating
             }
             try await repository.bootstrap()
             try await securityCoordinator?.recoverInterruptedOperations()
-            mutationsEnabled = true
-            hasLoaded = true
             try await refreshAll()
+            hasLoaded = true
+            mutationsEnabled = true
         } catch {
             documents = await repository.loadLegacyFallback()
             allDocuments = documents
@@ -173,6 +199,9 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func renameSecure(_ document: ScannedDocument, title: String, access: VaultAccess) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard let securityCoordinator else { return false }
         do {
             try await securityCoordinator.renameSecureDocument(document, title: title, access: access)
@@ -207,6 +236,9 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func deleteSecure(_ documents: [ScannedDocument], access: VaultAccess) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard let securityCoordinator else { return false }
         do {
             guard !documents.isEmpty,
@@ -228,6 +260,9 @@ final class DocumentLibrary: ObservableObject {
         to destinationFolderID: UUID?,
         access: VaultAccess
     ) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard let securityCoordinator else { return false }
         let destination = destinationFolderID.flatMap { id in allFolders.first(where: { $0.id == id })?.folder }
         if destinationFolderID != nil, destination == nil {
@@ -256,6 +291,9 @@ final class DocumentLibrary: ObservableObject {
         destination: DocumentFolder,
         access: VaultAccess
     ) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard requirePro(.secureFolder), let securityCoordinator else { return false }
         let documents = allDocuments.filter { ids.contains($0.id) }
         guard documents.count == ids.count else { return false }
@@ -280,6 +318,9 @@ final class DocumentLibrary: ObservableObject {
         destination: DocumentFolder,
         access: VaultAccess
     ) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard requirePro(.secureFolder), let securityCoordinator else { return false }
         do {
             let prepared = try await store.prepareSecureScan(
@@ -316,9 +357,8 @@ final class DocumentLibrary: ObservableObject {
 
         do {
             if security == .secure {
-                let creationAccess = try await vaultKeyStore.access(
-                    folderID: UUID(),
-                    reason: "Create a secure folder"
+                let creationAccess = try await vaultAccess(
+                    folderID: UUID(), reason: "Create a secure folder", allowsCreation: true
                 )
                 creationAccess.invalidate()
             }
@@ -334,21 +374,94 @@ final class DocumentLibrary: ObservableObject {
         }
     }
 
-    func unlockSecureFolder(_ folder: DocumentFolder) async -> VaultAccess? {
-        guard folder.isSecure else { return nil }
+    func unlockSecureFolder(_ folder: DocumentFolder) async throws -> VaultAccess {
+        guard folder.isSecure else { throw LibraryRepositoryError.invalidSecurityState }
+        guard hasLoaded, !isReloading, !isVaultMaintenanceActive else {
+            throw VaultAuthenticationError.libraryUnavailable
+        }
         if let existing = secureSessions.access(for: folder.id) { return existing }
-        beginSecureAuthentication()
-        defer { endSecureAuthentication() }
         do {
-            let access = try await vaultKeyStore.access(folderID: folder.id, reason: "Unlock \(folder.name)")
+            let access = try await vaultAccess(folderID: folder.id, reason: "Unlock secure folder")
             secureSessions.begin(access)
             return access
         } catch {
-            if error as? VaultAuthenticationError != .cancelled {
-                activeError = LibraryError(message: error.localizedDescription)
-            }
-            return nil
+            if (error as? VaultAuthenticationError) != .cancelled { vaultTransferStatus = nil }
+            throw error
         }
+    }
+
+    private func vaultAccess(folderID: UUID, reason: String, allowsCreation: Bool = false) async throws -> VaultAccess {
+        guard hasLoaded, !isReloading else { throw VaultAuthenticationError.libraryUnavailable }
+        beginSecureAuthentication()
+        defer { endSecureAuthentication() }
+
+        let lockGeneration = vaultLockGeneration
+        let access: VaultAccess
+        if allowsCreation {
+            guard let vaultBackup else { throw VaultAuthenticationError.libraryUnavailable }
+            access = try await vaultKeyStore.prepareForCreation(folderID: folderID, reason: reason) {
+                try await vaultBackup.confirmEmpty()
+            }
+        } else {
+            access = try await vaultKeyStore.openExisting(folderID: folderID, reason: reason)
+        }
+        guard lockGeneration == vaultLockGeneration, !Task.isCancelled else {
+            access.invalidate()
+            throw CancellationError()
+        }
+        recordVaultTransferStatus(access.transferStatus)
+        return access
+    }
+
+    func makeVaultBackup() async throws -> VaultBackup {
+        guard let vaultBackup else { throw VaultAuthenticationError.libraryUnavailable }
+        try beginVaultMaintenance()
+        defer { endVaultMaintenance() }
+        let backup = try await vaultBackup.makeBackup()
+        recordVaultTransferStatus(backup.transferStatus)
+        return backup
+    }
+
+    func restoreVault(from url: URL, code: String) async throws -> VaultRestoreResult {
+        guard let vaultBackup else { throw VaultAuthenticationError.libraryUnavailable }
+        try beginVaultMaintenance()
+        defer { endVaultMaintenance() }
+        let result = try await vaultBackup.restore(from: url, recoveryCode: code)
+        lockAllSecureFolders()
+        recordVaultTransferStatus(.ready)
+        // The restore committed. A transient refresh error must not look like
+        // a failed restore; the next library load will read the committed data.
+        do {
+            try await refreshAll()
+        } catch {
+            hasLoaded = false
+            loadState = .failed(error.localizedDescription)
+        }
+        return result
+    }
+
+    private func recordVaultTransferStatus(_ status: VaultTransferStatus) {
+        vaultTransferStatus = status
+        guard status == .ready, !hasVerifiedVaultTransfer else { return }
+        // Historical UI state only. Unlock still verifies the actual Keychain item.
+        preferences.set(true, forKey: AppPreferenceKey.vaultTransferVerified)
+        hasVerifiedVaultTransfer = true
+    }
+
+    private func beginVaultMaintenance() throws {
+        guard hasLoaded, mutationsEnabled, !isReloading else { throw VaultAuthenticationError.libraryUnavailable }
+        guard activeOperations.isEmpty, secureMutationCount == 0, secureAuthenticationCount == 0 else {
+            throw VaultAuthenticationError.busy
+        }
+        isVaultMaintenanceActive = true
+        mutationsEnabled = false
+        beginSecureAuthentication()
+    }
+
+    private func endVaultMaintenance() {
+        endSecureAuthentication()
+        isVaultMaintenanceActive = false
+        mutationsEnabled = hasLoaded
     }
 
     private func beginSecureAuthentication() {
@@ -371,6 +484,7 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func lockAllSecureFolders() {
+        vaultLockGeneration &+= 1
         securityConversionTasks.values.forEach { $0.cancel() }
         securityConversionTasks.removeAll()
         secureSessions.invalidateAll()
@@ -380,13 +494,17 @@ final class DocumentLibrary: ObservableObject {
     }
 
     func changeFolderSecurity(_ folder: DocumentFolder, to target: FolderSecurity) async -> Bool {
+        guard mutationsEnabled else { return false }
+        secureMutationCount += 1
+        defer { secureMutationCount -= 1 }
         guard target != .secure || requirePro(.secureFolder) else { return false }
         guard let securityCoordinator,
               !securityConversionTasks.keys.contains(folder.id) else { return false }
         do {
-            let access = try await vaultKeyStore.access(
+            let access = try await vaultAccess(
                 folderID: folder.id,
-                reason: target == .secure ? "Make \(folder.name) secure" : "Remove security from \(folder.name)"
+                reason: target == .secure ? "Make folder secure" : "Remove folder security",
+                allowsCreation: target == .secure && !folder.isSecure
             )
             secureSessions.begin(access)
             let task = Task { [self] in
@@ -495,10 +613,7 @@ final class DocumentLibrary: ObservableObject {
                 guard let securityCoordinator else { throw LibraryRepositoryError.invalidSecurityState }
                 let documents = allDocuments.filter { ids.contains($0.id) }
                 guard documents.count == ids.count else { throw LibraryRepositoryError.missingDocument }
-                let access = try await vaultKeyStore.access(
-                    folderID: folderID,
-                    reason: "Move documents into \(destination.name)"
-                )
+                let access = try await vaultAccess(folderID: folderID, reason: "Move documents into secure folder")
                 secureSessions.begin(access)
                 try await securityCoordinator.moveNormalDocumentsToSecure(
                     documents,
@@ -533,7 +648,7 @@ final class DocumentLibrary: ObservableObject {
                 guard let securityCoordinator, let securityRepository else {
                     throw LibraryRepositoryError.invalidSecurityState
                 }
-                let access = try await vaultKeyStore.access(folderID: id, reason: "Delete \(summary.folder.name)")
+                let access = try await vaultAccess(folderID: id, reason: "Delete secure folder")
                 secureSessions.begin(access)
                 switch mode {
                 case .keepDocuments:

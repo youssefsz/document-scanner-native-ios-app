@@ -7,35 +7,63 @@
 import SwiftUI
 import UIKit
 
+enum SecureFolderPresentation {
+    case locked
+    case opening
+    case documents(VaultAccess)
+
+    init(access: VaultAccess?, isAuthenticating: Bool, scenePhase: ScenePhase) {
+        if let access, access.isValid {
+            self = scenePhase == .active ? .documents(access) : .opening
+        } else {
+            self = isAuthenticating ? .opening : .locked
+        }
+    }
+}
+
 struct SecureFolderGate: View {
     let folder: DocumentFolder
 
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var library: DocumentLibrary
     @State private var access: VaultAccess?
-    @State private var isAuthenticating = false
-    @State private var pendingAccess: VaultAccess?
-    @State private var isAwaitingActiveSceneAfterAuthentication = false
+    @State private var unlockAttempt: UUID?
+    @State private var unlockError: String?
+    @State private var needsRecovery: Bool
+    @State private var showsRecovery = false
     @State private var isPresentingChildFlow = false
 
-    init(folder: DocumentFolder, initialAccess: VaultAccess? = nil) {
+    init(folder: DocumentFolder, initialAccess: VaultAccess? = nil, needsRecovery: Bool = false) {
         self.folder = folder
         _access = State(initialValue: initialAccess)
+        _needsRecovery = State(initialValue: needsRecovery)
     }
 
     var body: some View {
         Group {
             if !folder.isSecure {
                 FolderDetailView(folder: folder)
-            } else if let access, access.isValid, scenePhase == .active {
-                SecureFolderDetailView(
-                    folder: folder,
-                    access: access,
-                    isPresentingChildFlow: $isPresentingChildFlow
-                )
-                    .privacySensitive()
             } else {
-                lockedState
+                switch SecureFolderPresentation(
+                    access: access, isAuthenticating: unlockAttempt != nil, scenePhase: scenePhase
+                ) {
+                case .documents(let access):
+                    SecureFolderDetailView(
+                        folder: folder,
+                        access: access,
+                        isPresentingChildFlow: $isPresentingChildFlow,
+                        showsRecovery: $showsRecovery
+                    )
+                    .privacySensitive()
+                case .opening:
+                    SecureFolderOpeningIndicator()
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .appGroupedScreenBackground()
+                        .navigationTitle(folder.name)
+                        .navigationBarTitleDisplayMode(.inline)
+                case .locked:
+                    lockedState
+                }
             }
         }
         .overlay {
@@ -44,93 +72,113 @@ struct SecureFolderGate: View {
             }
         }
         .task {
-            guard folder.isSecure, access == nil else { return }
+            guard folder.isSecure, access == nil, !needsRecovery else { return }
             await unlock()
+        }
+        .sheet(isPresented: $showsRecovery, onDismiss: { isPresentingChildFlow = false }) {
+            NavigationStack { VaultRecoveryView(mode: needsRecovery ? .restore : .secureFolder) }
         }
         .onChange(of: scenePhase) { phase in
             handleScenePhase(phase)
         }
         .onDisappear {
             guard folder.isSecure, !isPresentingChildFlow else { return }
+            clearUnlock()
             library.lockSecureFolder(id: folder.id)
-            access = nil
         }
     }
 
     private var lockedState: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                lockedContent
+                    .frame(maxWidth: 440)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+        }
+        .appGroupedScreenBackground()
+        .navigationTitle(folder.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var lockedContent: some View {
         VStack(spacing: 14) {
-            if isAuthenticating {
-                ProgressView()
-                    .controlSize(.regular)
-                    .accessibilityLabel("Authenticating")
+            if needsRecovery {
+                VaultFolderIllustration(size: 94)
             }
 
-            Text(isAuthenticating ? "Unlocking..." : "Folder locked")
+            Text(needsRecovery ? "Vault recovery needed" : "Folder locked")
                 .font(.headline)
 
-            Text("Authenticate to view this folder's documents.")
+            Text(needsRecovery
+                 ? VaultAuthenticationError.recoveryRequired.localizedDescription
+                 : unlockError ?? "Authenticate to view this folder’s documents.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            if !isAuthenticating {
-                Button("Unlock") {
-                    Task { await unlock() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .accessibilityLabel("Unlock \(folder.name)")
+            if needsRecovery {
+                Button("Restore Vault Backup") { showsRecovery = true }
+                    .buttonStyle(.borderedProminent)
+                Button("Try Unlock Again") { Task { await unlock() } }
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Unlock") { Task { await unlock() } }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Unlock \(folder.name)")
             }
         }
-        .padding(32)
-        .appGroupedScreenBackground()
-        .navigationTitle(folder.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .animation(.easeInOut(duration: 0.2), value: isAuthenticating)
-    }
-
-    private func shouldLock(for phase: ScenePhase) -> Bool {
-        guard folder.isSecure else { return false }
-        if phase == .background { return true }
-        return phase == .inactive && !isAuthenticating && !library.isAuthenticatingSecureContent
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {
-        if phase == .active, isAwaitingActiveSceneAfterAuthentication {
-            access = pendingAccess
-            pendingAccess = nil
-            isAwaitingActiveSceneAfterAuthentication = false
-            isAuthenticating = false
-            return
+        guard folder.isSecure else { return }
+        if phase == .background ||
+            (phase == .inactive && unlockAttempt == nil && !library.isAuthenticatingSecureContent) {
+            clearUnlock()
         }
+    }
 
-        guard shouldLock(for: phase) else { return }
-        pendingAccess = nil
-        isAwaitingActiveSceneAfterAuthentication = false
-        isAuthenticating = false
+    private func clearUnlock() {
+        unlockAttempt = nil
         access = nil
     }
 
     private func unlock() async {
-        guard !isAuthenticating, scenePhase == .active else { return }
-        isAuthenticating = true
-        await Task.yield()
-
-        let unlockedAccess = await library.unlockSecureFolder(folder)
-        switch scenePhase {
-        case .active:
-            access = unlockedAccess
-            isAuthenticating = false
-        case .inactive:
-            pendingAccess = unlockedAccess
-            isAwaitingActiveSceneAfterAuthentication = true
-        case .background:
-            library.lockSecureFolder(id: folder.id)
-            isAuthenticating = false
-        @unknown default:
-            library.lockSecureFolder(id: folder.id)
-            isAuthenticating = false
+        guard unlockAttempt == nil, scenePhase == .active else { return }
+        let attempt = UUID()
+        unlockAttempt = attempt
+        defer {
+            if unlockAttempt == attempt { unlockAttempt = nil }
         }
+
+        do {
+            let unlockedAccess = try await library.unlockSecureFolder(folder)
+            guard unlockAttempt == attempt, !Task.isCancelled else {
+                unlockedAccess.invalidate()
+                return
+            }
+            // SwiftUI renders the authorized folder only when the scene is active.
+            // Authentication can finish before or after that scene transition.
+            access = unlockedAccess
+            needsRecovery = false
+            unlockError = nil
+        } catch {
+            guard unlockAttempt == attempt else { return }
+            if let issue = error as? VaultAuthenticationError {
+                if issue == .cancelled { return }
+                needsRecovery = issue == .recoveryRequired
+            }
+            if !(error is CancellationError) { unlockError = error.localizedDescription }
+        }
+    }
+}
+
+private struct SecureFolderOpeningIndicator: View {
+    var body: some View {
+        ProgressView("Opening secure folder…")
+            .frame(maxWidth: .infinity)
+            .padding(.top, 100)
     }
 }
 
@@ -138,6 +186,7 @@ private struct SecureFolderDetailView: View {
     let folder: DocumentFolder
     let access: VaultAccess
     @Binding var isPresentingChildFlow: Bool
+    @Binding var showsRecovery: Bool
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -168,9 +217,7 @@ private struct SecureFolderDetailView: View {
     var body: some View {
         ScrollView {
             if isLoading {
-                ProgressView("Opening secure folder...")
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 100)
+                SecureFolderOpeningIndicator()
                     .transition(contentTransition)
             } else if let errorMessage {
                 AppUnavailableStateView(
@@ -233,6 +280,10 @@ private struct SecureFolderDetailView: View {
             } else {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button("Vault Transfer & Backup", systemImage: "lock.shield") {
+                            isPresentingChildFlow = true
+                            showsRecovery = true
+                        }
                         Button("Scan into Folder", systemImage: "document.viewfinder") {
                             requestProFeature(.secureFolder) { openScanner() }
                         }
@@ -265,6 +316,20 @@ private struct SecureFolderDetailView: View {
         .overlay {
             if let photoImportProgress {
                 PhotoImportProgressOverlay(progress: photoImportProgress)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if case .pending = access.transferStatus {
+                Button {
+                    isPresentingChildFlow = true
+                    showsRecovery = true
+                } label: {
+                    Label("Vault transfer setup is incomplete", systemImage: "exclamationmark.shield")
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity)
+                        .padding(10)
+                }
+                .background(.regularMaterial)
             }
         }
         .task(id: access.sessionID) { await loadDocuments() }

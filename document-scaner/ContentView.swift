@@ -9,14 +9,20 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var library: DocumentLibrary
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.presentProPaywall) private var presentProPaywall
     @AppStorage(AppPreferenceKey.lastSeenMajorIntroduction) private var lastSeenMajorIntroduction = 0
+    @AppStorage(AppPreferenceKey.vaultTransferReminderDeferredUntil) private var reminderDeferredUntil = 0.0
+    @State private var showsVaultReminder = false
+    @State private var vaultReminderWasPresented = false
+    @State private var unlockWhenReminderDismisses = false
+    @State private var vaultUnlockRequest: DocumentFolder?
     @State private var isOnboardingPresented = false
     @State private var shouldPresentPaywallAfterOnboarding = false
     @State private var hasRequestedLaunchPaywall = false
 
     var body: some View {
-        LibraryView()
+        LibraryView(vaultUnlockRequest: vaultUnlockRequest)
 #if DEBUG
             .task {
                 guard PerformanceFixture.isEnabled else { return }
@@ -28,6 +34,14 @@ struct ContentView: View {
                 }
             }
 #endif
+            .sheet(isPresented: $showsVaultReminder, onDismiss: vaultReminderDidDismiss) {
+                VaultTransferReminderSheet {
+                    unlockWhenReminderDismisses = true
+                    showsVaultReminder = false
+                } remindLater: {
+                    showsVaultReminder = false
+                }
+            }
             .fullScreenCover(
                 isPresented: $isOnboardingPresented,
                 onDismiss: onboardingDidDismiss
@@ -43,12 +57,22 @@ struct ContentView: View {
             .onChange(of: library.loadState) { loadState in
                 updateOnboardingPresentation(for: loadState)
             }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active, library.secureFolderForTransferReminder != nil {
+                    presentVaultReminderIfDue()
+                }
+            }
     }
 
     private func updateOnboardingPresentation(for loadState: LibraryLoadState) {
 #if DEBUG
         if PerformanceFixture.isEnabled { return }
 #endif
+        if library.secureFolderForTransferReminder != nil {
+            presentVaultReminderIfDue()
+            return
+        }
+        guard !vaultReminderWasPresented else { return }
         let destination = AppLaunchPresentation.destination(
             lastSeenMajorIntroduction: lastSeenMajorIntroduction,
             loadState: loadState
@@ -63,6 +87,22 @@ struct ContentView: View {
         case .none:
             isOnboardingPresented = false
         }
+    }
+
+    private func presentVaultReminderIfDue() {
+        guard scenePhase == .active, !vaultReminderWasPresented,
+              Date.now.timeIntervalSince1970 >= reminderDeferredUntil else { return }
+        vaultReminderWasPresented = true
+        showsVaultReminder = true
+    }
+
+    private func vaultReminderDidDismiss() {
+        reminderDeferredUntil = Date.now.addingTimeInterval(VaultTransferReminder.snoozeDuration).timeIntervalSince1970
+        guard unlockWhenReminderDismisses else { return }
+        unlockWhenReminderDismisses = false
+        guard let folder = library.secureFolderForTransferReminder else { return }
+        library.selectedSection = .folders
+        vaultUnlockRequest = folder
     }
 
     private func finishOnboarding(_ completion: V2OnboardingCompletion) {
