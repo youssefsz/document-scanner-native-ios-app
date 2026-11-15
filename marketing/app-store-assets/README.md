@@ -1,11 +1,12 @@
 # DocScanner App Store assets
 
-This folder contains the illustrated product page header and search results artwork for DocScanner 2.0.4. Use the capture guide below to rebuild the separate iPhone and iPad screenshot sets. Number those screenshots in display order and export each image as an opaque RGB PNG.
+This folder contains the iPhone and iPad screenshot sets, illustrated product page header, and search results artwork for DocScanner 2.0.4. Each screenshot set contains five opaque RGB PNGs numbered in display order.
 
 | Placement | Output path | Export size |
 | --- | --- | --- |
-| iPhone with Dynamic Island, medium display | `iphone/` for local screenshot exports | 1179 × 2556 px, portrait |
-| iPad 13-inch display | `ipad/` for local screenshot exports | 2732 × 2048 px, landscape |
+| iPhone with Dynamic Island, medium display | [`iphone/`](iphone/) | 1179 × 2556 px, portrait |
+| iPhone with Face ID, large display | [`iphone/large-display/`](iphone/large-display/) | 1284 × 2778 px, portrait |
+| iPad 13-inch display | [`ipad/`](ipad/) | 2732 × 2048 px, landscape |
 | Product page header | [`header/product-page-header.png`](header/product-page-header.png) | 3840 × 1646 px |
 | Search results | [`search-results/search-results.png`](search-results/search-results.png) | 3840 × 2560 px |
 
@@ -54,6 +55,8 @@ Set the copy and device wrapper at these coordinates, in export pixels from the 
 
 For the iPad layout, the original CSS set the frame width to `597px` and the screen inset width to `543px`. The frame transform was `translateY(1504.44px) rotate(-90deg) scale(2.52)`. Inside the inset, a centered `720 × 539 px` screenshot rotated `90deg` to face the right way.
 
+For the large iPhone set, render the same iPhone layout on a `1284 × 2778 px` canvas. Scale the layout uniformly by `2778 / 2556`, center it horizontally, and fill the canvas with the same blue.
+
 The screenshot references were Scanner Pro's scanner-focused messaging, PDF Expert's tablet presentation, and Things 3's typography and spacing. The interface and document imagery in the device screenshots came from the DocScanner simulators. [Scanner Pro](https://apps.apple.com/us/app/scanner-pro-scan-to-pdf/id333710667) · [PDF Expert](https://apps.apple.com/us/app/pdf-expert-editor-reader/id743974925) · [Things 3 for iPad](https://apps.apple.com/us/app/things-3-for-ipad/id904244226)
 
 ## Rebuild the illustrated creatives
@@ -90,7 +93,7 @@ render_profile=$(mktemp -d)
 	"file://$PWD/creative-source/layout/product-page-header.html"
 ```
 
-- **Check dimensions and opacity.** Run `sips -g pixelWidth -g pixelHeight -g hasAlpha header/*.png search-results/*.png` from this folder. Run the same check on any local screenshot exports. Compare each result with the table above and check that `hasAlpha` is `no`.
+- **Check dimensions and opacity.** Run `sips -g pixelWidth -g pixelHeight -g hasAlpha iphone/*.png iphone/large-display/*.png ipad/*.png header/*.png search-results/*.png` from this folder. Compare each result with the table above and check that `hasAlpha` is `no`.
 - **Keep essential artwork inside the safe area.** For these export sizes, the header safe area starts at x 1097, y 493 and measures 1646 × 661 px. The search safe area starts at x 836, y 765 and measures 2168 × 1030 px. Extend the background to the canvas edges. [Creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications)
 - **Check the uploaded draft in Apple’s Device Preview.** Open **Header and Search Results**, then select **Preview**. The two-column header and stacked search card extend beyond the general safe areas. The iPhone previews showed the full headline and illustration in both placements. The iPad landscape preview also showed both papers in the header. Recheck these placements before reusing the layouts. [App Store Connect preview instructions](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-your-app-store-assets)
 - **Check the content.** Screenshots must show the app in use. Disclose purchase requirements for paid features shown, and localize copy for each storefront language you support. Keep pricing, discount claims, external URLs, and unverified awards out of the creative. [App Review Guidelines, section 2.3](https://developer.apple.com/app-store/review/guidelines/#accurate-metadata) · [Apple's creative guidance](https://developer.apple.com/app-store/asset-best-practices/)
